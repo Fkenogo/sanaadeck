@@ -1,16 +1,59 @@
-# React + Vite
+# SanaaDeck
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+East Africa’s Structured Creative Department.
 
-Currently, two official plugins are available:
+SanaaDeck is a credit-based creative production platform connecting East African businesses with curated creative talent through a structured dashboard system.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Core Concept
 
-## React Compiler
+- Subscription-based model
+- Credit economy (1 credit = 45 minutes production time)
+- Dashboard-only workflow (no WhatsApp project handling)
+- Structured performance tracking
+- Local payment integration (M-Pesa, Pesapal)
+- Firebase-powered backend
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+Frontend:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- React 18 (Vite)
+- TailwindCSS
+- Shadcn/ui
+- React Router
+- Zustand
+- React Query
+
+Backend:
+
+- Firebase Authentication
+- Cloud Firestore
+- Cloud Functions
+- Firebase Storage
+- Firebase Hosting
+
+## Project Structure
+
+This repository contains:
+
+- React application (client + creative + admin dashboards)
+- Firebase configuration
+- Credit tracking engine
+- Subscription management system
+- Performance scoring system (CPS)
+
+## Development Status
+
+Phase 1 – Foundation Setup
+
+- React + Vite initialized
+- GitHub connected
+- Firebase integration in progress
+
+## Vision
+
+To become the most structured, disciplined, and scalable creative production platform in East Africa.
+
+---
+
+Built by Fred Kenogo
