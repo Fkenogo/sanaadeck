@@ -1,0 +1,192 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userRole() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? userDoc().role
+        : null;
+    }
+
+    function userAdminType() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? userDoc().adminType
+        : null;
+    }
+
+    function isOwn(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isSuperAdmin() {
+      return userRole() == 'super_admin';
+    }
+
+    function isAdmin() {
+      return userRole() == 'admin' || isSuperAdmin();
+    }
+
+    function isProjectAdmin() {
+      return isSuperAdmin() || (userRole() == 'admin' && (userAdminType() == 'project_admin' || userAdminType() == 'app_admin'));
+    }
+
+    function projectDoc(projectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)).data;
+    }
+
+    function isProjectOwner(projectData) {
+      return signedIn() && projectData.clientId == request.auth.uid;
+    }
+
+    function isAssignedCreative(projectData) {
+      return signedIn() && (
+        projectData.assignedCreativeId == request.auth.uid ||
+        (projectData.assignedCreativeIds != null && request.auth.uid in projectData.assignedCreativeIds)
+      );
+    }
+
+    function isProjectMember(projectId) {
+      return signedIn() && exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid));
+    }
+
+    function canAccessProject(projectId, projectData) {
+      return isAdmin() || isProjectOwner(projectData) || isAssignedCreative(projectData) || isProjectMember(projectId);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwn(uid) || isAdmin();
+      allow create: if (
+        isOwn(uid) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.role in ['client', 'creative', 'admin', 'super_admin']
+      ) || (
+        isSuperAdmin() &&
+        request.resource.data.uid == uid &&
+        request.resource.data.role in ['admin']
+      );
+      allow update: if isOwn(uid) || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if signedIn();
+      allow create: if isOwn(clientId) || isAdmin();
+      allow update: if isOwn(clientId) || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /creatives/{creativeId} {
+      allow read: if signedIn();
+      allow create: if isOwn(creativeId) || isAdmin();
+      allow update: if isOwn(creativeId) || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if canAccessProject(projectId, resource.data);
+      allow create: if signedIn() && (request.resource.data.clientId == request.auth.uid || isProjectAdmin());
+      allow update, delete: if canAccessProject(projectId, resource.data);
+
+      match /members/{memberId} {
+        allow read: if canAccessProject(projectId, projectDoc(projectId));
+        allow create: if isAdmin() || (isProjectOwner(projectDoc(projectId)) && isOwn(memberId));
+        allow update: if isAdmin() || isOwn(memberId);
+        allow delete: if isAdmin();
+      }
+
+      match /comments/{commentId} {
+        allow read, create, update, delete: if canAccessProject(projectId, projectDoc(projectId));
+      }
+
+      match /notes/{noteId} {
+        allow read, create, update, delete: if canAccessProject(projectId, projectDoc(projectId));
+      }
+
+      match /versions/{versionId} {
+        allow read, create, update, delete: if canAccessProject(projectId, projectDoc(projectId));
+      }
+
+      match /activities/{activityId} {
+        allow read, create: if canAccessProject(projectId, projectDoc(projectId));
+        allow update, delete: if isAdmin();
+      }
+
+      match /presence/{presenceId} {
+        allow read: if canAccessProject(projectId, projectDoc(projectId));
+        allow create, update, delete: if isAdmin() || isOwn(presenceId);
+      }
+
+      match /approvals/{approvalId} {
+        allow read, create, update: if canAccessProject(projectId, projectDoc(projectId));
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.recipientId == request.auth.uid);
+      allow create: if signedIn();
+      allow update: if isAdmin() || (signedIn() && resource.data.recipientId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /notificationDigests/{digestId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.recipientId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /userNotificationPreferences/{uid} {
+      allow read, create, update: if isOwn(uid) || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /creditTransactions/{transactionId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.clientId == request.auth.uid);
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /performanceReviews/{reviewId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.creativeId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /fileLinks/{linkId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.createdBy == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isAdmin() || (signedIn() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || (signedIn() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      ));
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /templateAssetLibrary/{assetId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /systemJobs/{jobId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /test/{docId} {
+      allow read, write: if signedIn();
+    }
+  }
+}

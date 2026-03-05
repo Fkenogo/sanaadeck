@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userRole() {
+      return signedIn() && exists(/databases/(default)/documents/users/$(request.auth.uid))
+        ? userDoc().role
+        : null;
+    }
+
+    function isAdmin() {
+      return userRole() == 'admin' || userRole() == 'super_admin';
+    }
+
+    function isOwn(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function projectDoc(projectId) {
+      return get(/databases/(default)/documents/projects/$(projectId)).data;
+    }
+
+    function isAssignedCreative(projectId) {
+      return signedIn() && (
+        projectDoc(projectId).assignedCreativeId == request.auth.uid ||
+        (projectDoc(projectId).assignedCreativeIds != null && request.auth.uid in projectDoc(projectId).assignedCreativeIds)
+      );
+    }
+
+    function isProjectMember(projectId) {
+      return signedIn() && exists(/databases/(default)/documents/projects/$(projectId)/members/$(request.auth.uid));
+    }
+
+    function canAccessProject(projectId, clientId) {
+      return isAdmin() || isOwn(clientId) || isAssignedCreative(projectId) || isProjectMember(projectId);
+    }
+
+    function underMaxSize() {
+      return request.resource == null || request.resource.size <= 50 * 1024 * 1024;
+    }
+
+    function requesterOwnsNewObject() {
+      return request.resource != null &&
+        request.resource.metadata != null &&
+        request.resource.metadata.customMetadata != null &&
+        request.resource.metadata.customMetadata.createdBy == request.auth.uid;
+    }
+
+    function requesterOwnsExistingObject() {
+      return resource != null &&
+        resource.metadata != null &&
+        resource.metadata.customMetadata != null &&
+        resource.metadata.customMetadata.createdBy == request.auth.uid;
+    }
+
+    match /clients/{clientId}/projects/{projectId}/{allPaths=**} {
+      allow read: if canAccessProject(projectId, clientId);
+      allow create: if canAccessProject(projectId, clientId) && underMaxSize() && requesterOwnsNewObject();
+      allow update: if isAdmin() && underMaxSize();
+      allow delete: if isAdmin() || requesterOwnsExistingObject();
+    }
+
+    match /brand-assets/{clientId}/{allPaths=**} {
+      allow read: if isAdmin() || isOwn(clientId);
+      allow create: if (isAdmin() || isOwn(clientId)) && underMaxSize() && requesterOwnsNewObject();
+      allow update: if isAdmin() && underMaxSize();
+      allow delete: if isAdmin() || requesterOwnsExistingObject();
+    }
+
+    match /portfolios/{creativeId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow create: if (isAdmin() || isOwn(creativeId)) && underMaxSize() && requesterOwnsNewObject();
+      allow update: if isAdmin() && underMaxSize();
+      allow delete: if isAdmin() || requesterOwnsExistingObject();
+    }
+
+    match /templates/{templateId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow create: if (isAdmin() || userRole() == 'creative') && underMaxSize() && requesterOwnsNewObject();
+      allow update: if isAdmin() && underMaxSize();
+      allow delete: if isAdmin() || requesterOwnsExistingObject();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
