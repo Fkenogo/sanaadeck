@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import EarningsCard from '@/components/creative/EarningsCard'
 import PerformanceScoreCard from '@/components/creative/PerformanceScoreCard'
@@ -8,7 +9,7 @@ import RatingSummaryCard from '@/components/creative/RatingSummaryCard'
 import ProjectWorkspace from '@/components/creative/ProjectWorkspace'
 import WorkloadTracker from '@/components/creative/WorkloadTracker'
 import BonusExplainer from '@/components/creative/BonusExplainer'
-import TemplateContributionsCard from '@/components/creative/TemplateContributionsCard'
+import ImageBankContribution from '@/components/creative/ImageBankContribution'
 import NotificationCenter from '@/components/notifications/NotificationCenter'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel'
 import NotificationSummaryCard from '@/components/notifications/NotificationSummaryCard'
@@ -17,31 +18,18 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { db } from '@/services/firebase'
 import projectService from '@/services/projectService'
 import creativeService from '@/services/creativeService'
+import creativeEarningsService from '@/services/creativeEarningsService'
 import notificationService from '@/services/notificationService'
+import { toMillis, formatDate } from '@/utils/timestamp'
 
 const CREATIVE_MODULES = [
   { key: 'overview', label: 'Overview' },
   { key: 'projects', label: 'Projects' },
   { key: 'workspace', label: 'Workspace' },
-  { key: 'templates', label: 'Template contributions' },
+  { key: 'imageBank', label: 'Image Bank' },
   { key: 'notifications', label: 'Notifications' },
 ]
 
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 0
-  return date.getTime()
-}
-
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleDateString()
-}
 
 function getDeadlineCountdown(deadline, nowMs) {
   if (!deadline) return 'No deadline'
@@ -64,8 +52,26 @@ function formatCreativeTier(value) {
   return 'Mid'
 }
 
+function projectDisplayStatus(project = {}) {
+  const status = project.workflowStatus || project.status || 'pending'
+  return String(status).replaceAll('_', ' ')
+}
+
+function projectInstructions(project = {}) {
+  return project?.brief?.projectOverview || project.instructions || project.description || '-'
+}
+
+function projectAttachmentCount(project = {}) {
+  const inspiration = Array.isArray(project.inspirationFiles) ? project.inspirationFiles.length : 0
+  const brand = Array.isArray(project.brandAssets)
+    ? project.brandAssets.length
+    : (Array.isArray(project.brandAssetFiles) ? project.brandAssetFiles.length : 0)
+  return inspiration + brand
+}
+
 function CreativeDashboard() {
   const { user, userProfile, signOut } = useAuth()
+  const navigate = useNavigate()
   const [creativeData, setCreativeData] = useState(null)
   const [assignedProjects, setAssignedProjects] = useState([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
@@ -85,6 +91,8 @@ function CreativeDashboard() {
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [activeModule, setActiveModule] = useState('overview')
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState('overview')
+  const [earningsSummary, setEarningsSummary] = useState({ totalEarned: 0, pending: 0, paidOut: 0 })
+  const [earningsRecords, setEarningsRecords] = useState([])
 
   const creativeId = user?.uid
 
@@ -135,9 +143,21 @@ function CreativeDashboard() {
       },
     )
 
+    const unsubscribeEarnings = creativeEarningsService.subscribeToCreativeEarnings(
+      creativeId,
+      ({ records, summary }) => {
+        setEarningsRecords(records)
+        setEarningsSummary(summary)
+      },
+      (nextError) => {
+        console.error('[CreativeDashboard] Failed to load earnings ledger:', nextError)
+      },
+    )
+
     return () => {
       unsubscribeCreative()
       unsubscribeProjects()
+      unsubscribeEarnings()
     }
   }, [creativeId])
 
@@ -402,20 +422,6 @@ function CreativeDashboard() {
     }
   }
 
-  async function handleUploadTemplate(payload) {
-    if (!creativeId) return
-    setSaving(true)
-    setError('')
-    try {
-      await creativeService.addTemplateContribution(creativeId, payload)
-    } catch (uploadError) {
-      console.error('[CreativeDashboard] Failed to upload template contribution:', uploadError)
-      setError('Unable to upload template contribution.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleMarkNotificationRead(notificationId) {
     setError('')
     try {
@@ -462,20 +468,20 @@ function CreativeDashboard() {
 
   function renderProjects() {
     return (
-      <section className="rounded border border-border p-4">
+      <section className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold">Assigned Projects</h2>
+          <h2 className="text-base font-semibold text-white">Assigned Projects</h2>
           <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">Active projects: {activeProjects.length}</p>
-            <div className="flex rounded border border-border p-1 text-xs">
+            <p className="text-sm text-zinc-500">Active projects: {activeProjects.length}</p>
+            <div className="flex rounded-xl bg-white/5 border border-white/10 p-1 text-xs">
               <button
-                className={`rounded px-2 py-1 ${projectsViewMode === 'card' ? 'bg-primary text-primary-foreground' : ''}`}
+                className={`rounded-lg px-2 py-1 transition-all ${projectsViewMode === 'card' ? 'bg-[#C9A227] text-black font-semibold' : 'text-zinc-400 hover:text-white'}`}
                 onClick={() => setProjectsViewMode('card')}
               >
                 Card view
               </button>
               <button
-                className={`rounded px-2 py-1 ${projectsViewMode === 'table' ? 'bg-primary text-primary-foreground' : ''}`}
+                className={`rounded-lg px-2 py-1 transition-all ${projectsViewMode === 'table' ? 'bg-[#C9A227] text-black font-semibold' : 'text-zinc-400 hover:text-white'}`}
                 onClick={() => setProjectsViewMode('table')}
               >
                 Table view
@@ -522,6 +528,9 @@ function CreativeDashboard() {
                         ...project,
                         assignedCreativeName: creativeData?.displayName || project.assignedCreativeName || null,
                         deliverableType: `${project.deliverableType} · ${clientNamesById[project.clientId] || 'Unknown client'}`,
+                        deliverableTitle: project.deliverableTitle || project.deliverableType,
+                        categoryTitle: project.categoryTitle || project.category || '-',
+                        workflowStatus: project.workflowStatus || project.status,
                       }}
                       actions={actions}
                     />
@@ -541,10 +550,11 @@ function CreativeDashboard() {
                   <th className="py-2 pr-3 font-medium">Title</th>
                   <th className="py-2 pr-3 font-medium">Client</th>
                   <th className="py-2 pr-3 font-medium">Deliverable</th>
+                  <th className="py-2 pr-3 font-medium">Category</th>
                   <th className="py-2 pr-3 font-medium">Credits</th>
-                  <th className="py-2 pr-3 font-medium">Created</th>
                   <th className="py-2 pr-3 font-medium">Deadline</th>
-                  <th className="py-2 pr-3 font-medium">Countdown</th>
+                  <th className="py-2 pr-3 font-medium">Attachments</th>
+                  <th className="py-2 pr-3 font-medium">Instructions</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
                   <th className="py-2 pr-3 font-medium">Actions</th>
                 </tr>
@@ -555,12 +565,13 @@ function CreativeDashboard() {
                     <tr key={project.id} className="border-b border-border">
                       <td className="py-2 pr-3 font-medium">{project.title}</td>
                       <td className="py-2 pr-3">{clientNamesById[project.clientId] || 'Unknown client'}</td>
-                      <td className="py-2 pr-3">{project.deliverableType || 'Unknown'}</td>
-                      <td className="py-2 pr-3">{Number(project.actualCreditsUsed || project.confirmedCredits || project.estimatedCredits || 0)}</td>
-                      <td className="py-2 pr-3">{formatDate(project.createdAt)}</td>
+                      <td className="py-2 pr-3">{project.deliverableTitle || project.deliverableType || 'Unknown'}</td>
+                      <td className="py-2 pr-3">{project.categoryTitle || project.category || 'Unknown'}</td>
+                      <td className="py-2 pr-3">{Number(project.credits || project.actualCreditsUsed || project.confirmedCredits || project.estimatedCredits || 0)}</td>
                       <td className="py-2 pr-3">{formatDate(project.deadline)}</td>
-                      <td className="py-2 pr-3">{getDeadlineCountdown(project.deadline, nowMs)}</td>
-                      <td className="py-2 pr-3">{project.status?.replaceAll('_', ' ') || 'unknown'}</td>
+                      <td className="py-2 pr-3">{projectAttachmentCount(project)}</td>
+                      <td className="py-2 pr-3 max-w-[220px] truncate" title={projectInstructions(project)}>{projectInstructions(project)}</td>
+                      <td className="py-2 pr-3">{projectDisplayStatus(project)}</td>
                       <td className="py-2 pr-3">
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -604,7 +615,7 @@ function CreativeDashboard() {
                   ))
                 ) : (
                   <tr>
-                    <td className="py-3 text-muted-foreground" colSpan={9}>
+                    <td className="py-3 text-muted-foreground" colSpan={10}>
                       No assigned projects yet.
                     </td>
                   </tr>
@@ -638,18 +649,18 @@ function CreativeDashboard() {
     }
 
     return (
-      <section className="rounded border border-border p-4">
-        <h2 className="text-base font-semibold">Workspace</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Choose a project to open your collaborative workspace.</p>
+      <section className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-5">
+        <h2 className="text-base font-semibold text-white">Workspace</h2>
+        <p className="mt-1 text-sm text-zinc-500">Choose a project to open your collaborative workspace.</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {projectsSortedForDisplay.map((project) => (
             <button
               key={project.id}
               onClick={() => openWorkspace(project.id, 'overview')}
-              className="rounded border border-border px-3 py-2 text-left text-sm hover:bg-muted"
+              className="flex items-center justify-between rounded-xl bg-[#1F1F1F] border border-white/5 px-4 py-3 text-left text-sm hover:border-white/10 transition-all"
             >
-              <p className="font-medium">{project.title}</p>
-              <p className="text-xs text-muted-foreground">{project.status?.replaceAll('_', ' ') || 'unknown'}</p>
+              <p className="font-medium text-white">{project.title}</p>
+              <p className="text-xs text-zinc-500">{project.status?.replaceAll('_', ' ') || 'unknown'}</p>
             </button>
           ))}
         </div>
@@ -663,11 +674,8 @@ function CreativeDashboard() {
         <div className="space-y-4">
           <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
             <EarningsCard
-              earnings={creativeData?.earnings}
-              payoutRate={creativeData?.payoutRate}
-              creditsCompletedThisMonth={creditsCompletedThisMonth}
-              projects={assignedProjects}
-              bonuses={creativeData?.bonuses}
+              summary={earningsSummary}
+              records={earningsRecords}
             />
             <PerformanceScoreCard performance={mergedPerformance} />
             <RatingSummaryCard summary={ratingSummary} />
@@ -702,15 +710,8 @@ function CreativeDashboard() {
       return renderWorkspace()
     }
 
-    if (activeModule === 'templates') {
-      return (
-        <TemplateContributionsCard
-          contributions={creativeData?.templateContributions || []}
-          onUploadTemplate={handleUploadTemplate}
-          uploading={saving}
-          creativeId={creativeId}
-        />
-      )
+    if (activeModule === 'imageBank') {
+      return <ImageBankContribution creativeId={creativeId} />
     }
 
     return (
@@ -740,55 +741,62 @@ function CreativeDashboard() {
   }
 
   return (
-    <main className="flex h-screen overflow-hidden bg-background">
-      <aside className="w-56 shrink-0 border-r border-border p-4">
-        <h1 className="text-xl font-semibold">Creative Console</h1>
-        <p className="mt-1 text-xs text-muted-foreground">{creativeData?.displayName || userProfile?.displayName || 'Creative'}</p>
-        <p className="mt-1 text-xs text-muted-foreground">Tier: {creativeData?.tier || 'mid'}</p>
+    <main className="flex h-screen overflow-hidden bg-[#0F0F0F]">
+      <aside className="w-56 shrink-0 border-r border-white/5 bg-[#111111] p-5 flex flex-col">
+        <h1 className="text-lg font-bold text-white tracking-tight">Creative Console</h1>
+        <p className="mt-0.5 text-xs text-[#C9A227]">{creativeData?.displayName || userProfile?.displayName || 'Creative'}</p>
+        <p className="mt-0.5 text-xs text-zinc-600">Tier: {creativeData?.tier || 'mid'}</p>
 
         <nav className="mt-4 space-y-1">
           {CREATIVE_MODULES.map((module) => (
             <button
               key={module.key}
               onClick={() => setActiveModule(module.key)}
-              className={`block w-full rounded px-3 py-2 text-left text-sm ${activeModule === module.key ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+              className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-all ${activeModule === module.key ? 'bg-[#1F1F1F] text-[#C9A227] border-l-2 border-[#C9A227] font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
             >
               <span className="flex items-center justify-between gap-2">
                 <span>{module.label}</span>
                 {module.key === 'notifications' && unreadNotificationsCount > 0 ? (
-                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white">{unreadNotificationsCount}</span>
+                  <span className="rounded-full bg-[#C9A227] px-1.5 py-0.5 text-[10px] text-black font-bold">{unreadNotificationsCount}</span>
                 ) : null}
               </span>
             </button>
           ))}
         </nav>
 
-        <button className="mt-6 w-full rounded border border-border px-3 py-2 text-sm" onClick={signOut}>
+        <button
+          onClick={() => navigate('/creative/profile')}
+          className="mt-4 block w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-400 hover:text-white hover:bg-white/5"
+        >
+          My Profile
+        </button>
+
+        <button className="mt-auto rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:border-white/20 transition-all" onClick={signOut}>
           Sign out
         </button>
       </aside>
 
-      <section className="flex-1 overflow-auto p-6">
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <section className="flex-1 overflow-auto bg-[#0F0F0F] p-6">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Creative Dashboard</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-2xl font-bold text-white">Creative Dashboard</h2>
+            <p className="text-sm text-zinc-500 mt-0.5">
               Welcome, {creativeData?.displayName || userProfile?.displayName || 'Creative'}.
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-zinc-500">
               Active projects: {activeProjects.length} · Credits this month: {creditsCompletedThisMonth} · Rating:{' '}
               {Number(mergedPerformance?.avgRating || 0).toFixed(2)}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded border border-border px-2 py-1 text-xs font-semibold">
-              Tier: {formatCreativeTier(creativeData?.tier)}
+            <span className="rounded-full bg-[#C9A227]/10 border border-[#C9A227]/20 px-2.5 py-0.5 text-xs font-semibold text-[#C9A227]">
+              {formatCreativeTier(creativeData?.tier)}
             </span>
             <NotificationCenter userId={creativeId} onOpenNotificationsPage={() => setActiveModule('notifications')} />
           </div>
         </header>
 
-        {error ? <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</p> : null}
 
         {renderModule()}
       </section>

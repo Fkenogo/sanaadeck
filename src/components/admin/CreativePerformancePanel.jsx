@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/services/firebase'
+import { formatDate } from '@/utils/timestamp'
 
 const PAGE_SIZE = 50
 
@@ -14,12 +15,6 @@ function statusBadge(status) {
   return 'bg-muted text-foreground'
 }
 
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleDateString()
-}
 
 function CreativePerformancePanel({ creatives = [], onManualOverride, onRunMonthlyCps }) {
   const [reviews, setReviews] = useState([])

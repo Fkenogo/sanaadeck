@@ -13,23 +13,28 @@ import RevenueChart from '@/components/admin/RevenueChart'
 import CreditAnalyticsPanel from '@/components/admin/CreditAnalyticsPanel'
 import PaymentMonitoringPanel from '@/components/admin/PaymentMonitoringPanel'
 import PaymentsSubscriptionsManagementPanel from '@/components/admin/PaymentsSubscriptionsManagementPanel'
+import FinanceDashboardPanel from '@/components/admin/FinanceDashboardPanel'
 import ReportGenerator from '@/components/admin/ReportGenerator'
 import UsersManagementPanel from '@/components/admin/UsersManagementPanel'
 import CreditTransactionsManagementPanel from '@/components/admin/CreditTransactionsManagementPanel'
 import NotificationsManagementPanel from '@/components/admin/NotificationsManagementPanel'
-import TemplateAssetLibraryPanel from '@/components/admin/TemplateAssetLibraryPanel'
+import BriefingTemplates from '@/components/admin/BriefingTemplates'
+import ImageBankModeration from '@/components/admin/ImageBankModeration'
+import OperationsDashboardPanel from '@/components/admin/OperationsDashboardPanel'
+import CreativePayoutLedgerPanel from '@/components/admin/CreativePayoutLedgerPanel'
 import SystemJobsPanel from '@/components/admin/SystemJobsPanel'
 import NotificationCenter from '@/components/notifications/NotificationCenter'
 import NotificationSummaryCard from '@/components/notifications/NotificationSummaryCard'
 import { useNotifications } from '@/hooks/useNotifications'
 import adminService from '@/services/adminService'
+import imageBankService from '@/services/imageBankService'
 import projectService from '@/services/projectService'
-import { SUBSCRIPTION_TIERS, TIER_BY_KEY } from '@/utils/constants'
-
-const ACTIVE_PROJECT_STATUSES = new Set(['pending_confirmation', 'confirmed', 'in_progress', 'ready_for_qc', 'revision_requested'])
+import { ACTIVE_PROJECT_STATUSES, ADMIN_PERMISSION_PRESETS, SUBSCRIPTION_TIERS, TIER_BY_KEY } from '@/utils/constants'
+import { toMillis, monthLabel } from '@/utils/timestamp'
 
 const ALL_MODULES = [
   { key: 'overview', label: 'Overview' },
+  { key: 'finance', label: 'Finance' },
   { key: 'users', label: 'Users' },
   { key: 'clients', label: 'Clients' },
   { key: 'creatives', label: 'Creatives' },
@@ -37,25 +42,12 @@ const ALL_MODULES = [
   { key: 'credit_transactions', label: 'Credit Tx' },
   { key: 'payments_subscriptions', label: 'Payments' },
   { key: 'notifications', label: 'Notifications' },
-  { key: 'template_assets', label: 'Template Library' },
+  { key: 'briefing_templates', label: 'Briefing Templates' },
+  { key: 'image_moderation', label: 'Image Moderation' },
+  { key: 'operations', label: 'Operations' },
   { key: 'reports', label: 'Reports' },
   { key: 'admins', label: 'Admins' },
 ]
-
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 0
-  return date.getTime()
-}
-
-function monthLabel(offset) {
-  const date = new Date()
-  date.setMonth(date.getMonth() - offset)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
 
 function matchesMonth(value, label) {
   const ms = toMillis(value)
@@ -73,8 +65,10 @@ function AdminDashboard({ mode = 'super' }) {
   const [users, setUsers] = useState([])
   const [payments, setPayments] = useState([])
   const [creditTransactions, setCreditTransactions] = useState([])
+  const [creativeEarnings, setCreativeEarnings] = useState([])
   const [notifications, setNotifications] = useState([])
-  const [templateAssets, setTemplateAssets] = useState([])
+  const [briefingTemplates, setBriefingTemplates] = useState([])
+  const [imageBankAssets, setImageBankAssets] = useState([])
   const [systemJobs, setSystemJobs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -102,18 +96,23 @@ function AdminDashboard({ mode = 'super' }) {
 
   const canModule = useCallback((moduleKey) => {
     if (isSuperAdmin) return true
-    return Boolean(userProfile?.adminPermissions?.modules?.[moduleKey])
+    const presetModules = ADMIN_PERMISSION_PRESETS[userProfile?.adminType || 'project_admin']?.modules || {}
+    const modules = userProfile?.adminPermissions?.modules || presetModules
+    return Boolean(modules[moduleKey])
   }, [isSuperAdmin, userProfile])
 
   const canAction = useCallback((actionKey) => {
     if (isSuperAdmin) return true
-    return Boolean(userProfile?.adminPermissions?.actions?.[actionKey])
+    const presetActions = ADMIN_PERMISSION_PRESETS[userProfile?.adminType || 'project_admin']?.actions || {}
+    const actions = userProfile?.adminPermissions?.actions || presetActions
+    return Boolean(actions[actionKey])
   }, [isSuperAdmin, userProfile])
 
   const visibleModules = useMemo(() => {
     let pool = ALL_MODULES
     if (mode === 'project') {
-      pool = ALL_MODULES.filter((entry) => ['overview', 'projects', 'notifications', 'reports'].includes(entry.key))
+      pool = ALL_MODULES.filter((entry) =>
+        ['overview', 'finance', 'projects', 'notifications', 'reports', 'briefing_templates', 'image_moderation', 'operations'].includes(entry.key))
     } else if (mode === 'app') {
       pool = ALL_MODULES.filter((entry) => entry.key !== 'projects')
     }
@@ -131,39 +130,71 @@ function AdminDashboard({ mode = 'super' }) {
   useEffect(() => {
     setLoading(true)
     setError('')
+    let bootResolved = false
+
+    function resolveBoot() {
+      if (bootResolved) return
+      bootResolved = true
+      setLoading(false)
+    }
+
+    const bootTimer = setTimeout(() => {
+      resolveBoot()
+    }, 3500)
 
     const unsubClients = adminService.subscribeToCollection('clients', (records) => {
       setClients(records)
-      setLoading(false)
+      resolveBoot()
     }, () => {
       setError('Failed to load client records.')
-      setLoading(false)
+      resolveBoot()
     })
 
     const unsubCreatives = adminService.subscribeToCollection('creatives', setCreatives, () => {
       setError('Failed to load creative records.')
+      resolveBoot()
     })
 
-    const unsubProjects = adminService.subscribeToCollection('projects', setProjects, () => {
+    const unsubProjects = adminService.subscribeToCollection('projects', (records) => {
+      setProjects(records)
+      resolveBoot()
+    }, () => {
       setError('Failed to load projects.')
+      resolveBoot()
     })
 
-    const unsubUsers = adminService.subscribeToCollection('users', setUsers)
+    const unsubUsers = adminService.subscribeToCollection('users', (records) => {
+      setUsers(records)
+      resolveBoot()
+    }, () => resolveBoot())
     const unsubPayments = adminService.subscribeToCollection('payments', setPayments)
     const unsubCreditTransactions = adminService.subscribeToCollection('creditTransactions', setCreditTransactions)
+    const unsubCreativeEarnings = adminService.subscribeToCollection('creativeEarnings', setCreativeEarnings, () => setCreativeEarnings([]))
     const unsubNotifications = adminService.subscribeToCollection('notifications', setNotifications)
-    const unsubTemplateAssets = adminService.subscribeToCollection('templateAssetLibrary', setTemplateAssets, () => setTemplateAssets([]))
+    const unsubBriefingTemplates = adminService.subscribeToCollection('briefingTemplates', setBriefingTemplates, () => {
+      setBriefingTemplates([])
+      setError('Failed to load briefing templates in founder console.')
+      resolveBoot()
+    })
+    const unsubImageBankAssets = imageBankService.subscribeModerationQueue(setImageBankAssets, () => {
+      setImageBankAssets([])
+      setError('Failed to load image moderation queue.')
+      resolveBoot()
+    })
     const unsubSystemJobs = adminService.subscribeToCollection('systemJobs', setSystemJobs, () => setSystemJobs([]))
 
     return () => {
+      clearTimeout(bootTimer)
       unsubClients()
       unsubCreatives()
       unsubProjects()
       unsubUsers()
       unsubPayments()
       unsubCreditTransactions()
+      unsubCreativeEarnings()
       unsubNotifications()
-      unsubTemplateAssets()
+      unsubBriefingTemplates()
+      unsubImageBankAssets()
       unsubSystemJobs()
     }
   }, [])
@@ -193,7 +224,7 @@ function AdminDashboard({ mode = 'super' }) {
     const creditsIssued = activeClients.reduce((sum, client) => sum + Number(client.subscription?.creditsPerMonth || 0), 0)
     const creditsUsed = activeClients.reduce((sum, client) => sum + Number(client.subscription?.creditsUsed || 0), 0)
     const utilization = creditsIssued > 0 ? (creditsUsed / creditsIssued) * 100 : 0
-    const activeProjects = projects.filter((project) => ACTIVE_PROJECT_STATUSES.has(project.status)).length
+    const activeProjects = projects.filter((project) => ACTIVE_PROJECT_STATUSES.includes(project.status)).length
     const estimatedCreativePayout = creditsUsed * 9
     const grossMargin = mrr > 0 ? ((mrr - estimatedCreativePayout) / mrr) * 100 : 0
 
@@ -293,17 +324,22 @@ function AdminDashboard({ mode = 'super' }) {
       setError('You do not have permission for this action.')
       return
     }
-    await fn()
+    try {
+      await fn()
+    } catch (actionError) {
+      console.error(`[AdminDashboard] Action ${actionKey} failed:`, actionError)
+      setError(actionError?.message || 'Action failed. Please try again.')
+    }
   }
 
-  async function handleAssignProject(projectId, creativeId) {
+  async function handleAssignProject(projectId, creativeId, assignmentMeta = {}) {
     await guard('assign_project', async () => {
       await adminService.assignProject(projectId, creativeId, {
         uid: userProfile?.uid,
         role: isSuperAdmin ? 'super_admin' : userProfile?.adminType || 'project_admin',
         displayName: userProfile?.displayName || null,
         email: userProfile?.email || null,
-      })
+      }, assignmentMeta)
     })
   }
 
@@ -326,6 +362,18 @@ function AdminDashboard({ mode = 'super' }) {
         displayName: userProfile?.displayName || null,
         email: userProfile?.email || null,
       })
+    })
+  }
+
+  async function handleMoveProjectStatus(projectId, workflowStatus) {
+    await guard('assign_project', async () => {
+      await adminService.updateProjectWorkflowStatus(projectId, workflowStatus)
+    })
+  }
+
+  async function handleFlagProjectDelay(projectId, reason) {
+    await guard('assign_project', async () => {
+      await adminService.flagProjectDelay(projectId, reason)
     })
   }
 
@@ -520,15 +568,45 @@ function AdminDashboard({ mode = 'super' }) {
     })
   }
 
-  async function handleCreateTemplateAsset(payload) {
-    await guard('manage_template_assets', async () => {
-      await adminService.createTemplateAsset(payload, userProfile?.uid || 'admin')
+  async function handleUpdateCreativeEarningStatus(recordId, status) {
+    await guard('change_subscription_status', async () => {
+      await adminService.updateCreativeEarningStatus(recordId, status)
     })
   }
 
-  async function handleDeleteTemplateAsset(assetId) {
-    await guard('manage_template_assets', async () => {
-      await adminService.deleteTemplateAsset(assetId)
+  async function handleCreateBriefingTemplate(payload) {
+    await guard('manage_briefing_templates', async () => {
+      await adminService.createBriefingTemplate(payload, userProfile?.uid || 'admin')
+    })
+  }
+
+  async function handleDeleteBriefingTemplate(templateId) {
+    await guard('manage_briefing_templates', async () => {
+      await adminService.deleteBriefingTemplate(templateId)
+    })
+  }
+
+  async function handleUpdateBriefingTemplate(templateId, payload) {
+    await guard('manage_briefing_templates', async () => {
+      await adminService.updateBriefingTemplate(templateId, payload)
+    })
+  }
+
+  async function handleToggleBriefingTemplatePublished(templateId, currentlyPublished) {
+    await guard('manage_briefing_templates', async () => {
+      await adminService.setBriefingTemplateStatus(templateId, currentlyPublished ? 'inactive' : 'active')
+    })
+  }
+
+  async function handleApproveImageAsset(assetId, moderationChecks) {
+    await guard('manage_image_bank', async () => {
+      await imageBankService.approveAsset(assetId, userProfile?.uid || 'admin', moderationChecks)
+    })
+  }
+
+  async function handleRejectImageAsset(assetId, rejectionReason = '', moderationChecks = {}) {
+    await guard('manage_image_bank', async () => {
+      await imageBankService.rejectAsset(assetId, userProfile?.uid || 'admin', rejectionReason, moderationChecks)
     })
   }
 
@@ -711,14 +789,30 @@ function AdminDashboard({ mode = 'super' }) {
 
     if (activeModule === 'projects') {
       return (
-        <ProjectOversightPanel
+        <div className="space-y-4">
+          <ProjectOversightPanel
+            projects={projects}
+            creatives={creatives}
+            onAssignProject={handleAssignProject}
+            onApproveQC={handleApproveQC}
+            onRequestRevision={handleRequestRevision}
+            onOpenWorkspace={(projectId) => setSelectedProjectId(projectId)}
+            onAdjustProjectEstimate={canAction('adjust_project_credits') ? handleAdjustProjectEstimate : undefined}
+          />
+          <CreativePayoutLedgerPanel records={creativeEarnings} creatives={creatives} projects={projects} />
+        </div>
+      )
+    }
+
+    if (activeModule === 'finance') {
+      return (
+        <FinanceDashboardPanel
+          clients={clients}
+          payments={payments}
+          creditTransactions={creditTransactions}
           projects={projects}
-          creatives={creatives}
-          onAssignProject={handleAssignProject}
-          onApproveQC={handleApproveQC}
-          onRequestRevision={handleRequestRevision}
-          onOpenWorkspace={(projectId) => setSelectedProjectId(projectId)}
-          onAdjustProjectEstimate={canAction('adjust_project_credits') ? handleAdjustProjectEstimate : undefined}
+          creativeEarnings={creativeEarnings}
+          onUpdatePayoutStatus={handleUpdateCreativeEarningStatus}
         />
       )
     }
@@ -754,13 +848,39 @@ function AdminDashboard({ mode = 'super' }) {
       )
     }
 
-    if (activeModule === 'template_assets') {
+    if (activeModule === 'briefing_templates') {
       return (
-        <TemplateAssetLibraryPanel
-          assets={templateAssets}
+        <BriefingTemplates
+          templates={briefingTemplates}
+          onCreateTemplate={handleCreateBriefingTemplate}
+          onUpdateTemplate={handleUpdateBriefingTemplate}
+          onTogglePublished={handleToggleBriefingTemplatePublished}
+          onDeleteTemplate={handleDeleteBriefingTemplate}
+        />
+      )
+    }
+
+    if (activeModule === 'image_moderation') {
+      return (
+        <ImageBankModeration
+          assets={imageBankAssets}
+          onApprove={handleApproveImageAsset}
+          onReject={handleRejectImageAsset}
+        />
+      )
+    }
+
+    if (activeModule === 'operations') {
+      return (
+        <OperationsDashboardPanel
+          projects={projects}
           creatives={creatives}
-          onCreateAsset={handleCreateTemplateAsset}
-          onDeleteAsset={handleDeleteTemplateAsset}
+          clients={clients}
+          onAssignProject={handleAssignProject}
+          onRequestRevision={handleRequestRevision}
+          onMoveStatus={handleMoveProjectStatus}
+          onFlagDelay={handleFlagProjectDelay}
+          onOpenWorkspace={(projectId) => setSelectedProjectId(projectId)}
         />
       )
     }
@@ -772,41 +892,41 @@ function AdminDashboard({ mode = 'super' }) {
     return (
       <div className="space-y-3">
         {canAction('manage_admins') ? (
-          <div className="rounded border border-border bg-white p-3">
-            <p className="text-sm font-medium">Workspace migration tools</p>
-            <p className="text-xs text-muted-foreground">Backfill legacy workspace arrays into subcollections from server-side admin action.</p>
+          <div className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-4">
+            <p className="text-sm font-medium text-white">Workspace migration tools</p>
+            <p className="text-xs text-zinc-500">Backfill legacy workspace arrays into subcollections from server-side admin action.</p>
             <div className="mt-2 grid gap-2 md:grid-cols-2">
-              <label className="text-xs text-muted-foreground">
+              <label className="text-xs text-zinc-500">
                 Max projects this run (0 = full run)
                 <input
                   type="number"
                   min="0"
                   value={workspaceMigrationMaxProjects}
                   onChange={(event) => setWorkspaceMigrationMaxProjects(Number(event.target.value))}
-                  className="mt-1 w-full rounded border border-border px-2 py-1 text-sm text-foreground"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-[#262626] px-2 py-1 text-sm text-white"
                 />
               </label>
-              <label className="text-xs text-muted-foreground">
+              <label className="text-xs text-zinc-500">
                 Resume after project ID (cursor)
                 <input
                   type="text"
                   value={workspaceMigrationCursor}
                   onChange={(event) => setWorkspaceMigrationCursor(event.target.value)}
-                  className="mt-1 w-full rounded border border-border px-2 py-1 text-sm text-foreground"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-[#262626] px-2 py-1 text-sm text-white"
                   placeholder="optional project id cursor"
                 />
               </label>
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <button
-                className="rounded border border-border px-3 py-1.5 text-sm"
+                className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-50"
                 onClick={() => handleRunWorkspaceMigration(false)}
                 disabled={workspaceMigrationRunning}
               >
                 {workspaceMigrationRunning ? 'Running migration...' : 'Run migrate'}
               </button>
               <button
-                className="rounded border border-border px-3 py-1.5 text-sm"
+                className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-50"
                 onClick={() => handleRunWorkspaceMigration(true)}
                 disabled={workspaceMigrationRunning}
               >
@@ -819,19 +939,19 @@ function AdminDashboard({ mode = 'super' }) {
               </p>
             ) : null}
 
-            <div className="mt-3 rounded border border-border p-3">
-              <p className="text-sm font-medium">Credit maintenance tools</p>
-              <p className="text-xs text-muted-foreground">Run monthly allocation and expired-pack cleanup jobs on demand.</p>
+            <div className="mt-3 rounded-xl bg-[#1F1F1F] border border-white/5 p-3">
+              <p className="text-sm font-medium text-white">Credit maintenance tools</p>
+              <p className="text-xs text-zinc-500">Run monthly allocation and expired-pack cleanup jobs on demand.</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
-                  className="rounded border border-border px-3 py-1.5 text-sm"
+                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-50"
                   onClick={handleRunMonthlyCreditAllocation}
                   disabled={monthlyAllocationRunning}
                 >
                   {monthlyAllocationRunning ? 'Running allocation...' : 'Run monthly allocation'}
                 </button>
                 <button
-                  className="rounded border border-border px-3 py-1.5 text-sm"
+                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-50"
                   onClick={handleRunExpiredPackCleanup}
                   disabled={expiryCleanupRunning}
                 >
@@ -874,44 +994,44 @@ function AdminDashboard({ mode = 'super' }) {
 
   return (
     <main className="flex h-screen overflow-hidden bg-background">
-      <aside className="w-64 shrink-0 border-r border-border p-4">
-        <h1 className="text-xl font-semibold">Founder Console</h1>
-        <p className="mt-1 text-xs text-muted-foreground">{userProfile?.displayName || 'Super Admin'}</p>
+      <aside className="w-64 shrink-0 border-r border-white/5 bg-[#0A0A0A] p-5 flex flex-col">
+        <h1 className="text-lg font-bold text-white tracking-tight">Founder Console</h1>
+        <p className="mt-0.5 text-xs text-[#C9A227]">{userProfile?.displayName || 'Super Admin'}</p>
 
         <nav className="mt-4 space-y-1">
           {visibleModules.map((module) => (
             <button
               key={module.key}
               onClick={() => setActiveModule(module.key)}
-              className={`block w-full rounded px-3 py-2 text-left text-sm ${activeModule === module.key ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+              className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-all ${activeModule === module.key ? 'bg-[#1F1F1F] text-[#C9A227] border-l-2 border-[#C9A227] font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
             >
               <span className="flex items-center justify-between gap-2">
                 <span>{module.label}</span>
                 {module.key === 'notifications' && unreadNotificationsCount > 0 ? (
-                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white">{unreadNotificationsCount}</span>
+                  <span className="rounded-full bg-[#C9A227] px-1.5 py-0.5 text-[10px] text-black font-bold">{unreadNotificationsCount}</span>
                 ) : null}
               </span>
             </button>
           ))}
         </nav>
 
-        <button className="mt-6 w-full rounded border border-border px-3 py-2 text-sm" onClick={signOut}>
+        <button className="mt-auto rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:border-white/20 transition-all" onClick={signOut}>
           Sign out
         </button>
       </aside>
 
-      <section className="flex-1 overflow-auto p-6">
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <section key={activeModule} className="flex-1 overflow-auto bg-[#0F0F0F] p-6">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">{visibleModules.find((entry) => entry.key === activeModule)?.label || 'Overview'}</h2>
-            <p className="text-sm text-muted-foreground">Operate the platform from focused modules with role-based controls.</p>
+            <h2 className="text-2xl font-bold text-white">{visibleModules.find((entry) => entry.key === activeModule)?.label || 'Overview'}</h2>
+            <p className="text-sm text-zinc-500 mt-0.5">Operate the platform from focused modules with role-based controls.</p>
           </div>
           <NotificationCenter userId={user?.uid} onOpenNotificationsPage={() => setActiveModule('notifications')} />
         </header>
         {inboxUnreadCount > 0 ? (
           <p className="mb-3 text-xs text-muted-foreground">Your unread inbox notifications: {inboxUnreadCount}</p>
         ) : null}
-        {error ? <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</p> : null}
 
         {renderModule()}
       </section>

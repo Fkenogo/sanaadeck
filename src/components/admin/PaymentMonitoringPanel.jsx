@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { normalizeTimestamp } from '@/utils/timestamp'
 
 function PaymentMonitoringPanel({ payments = [], clients = [] }) {
   const [nowMs] = useState(() => Date.now())
@@ -15,8 +16,8 @@ function PaymentMonitoringPanel({ payments = [], clients = [] }) {
   const renewalsDue = clients.filter((client) => {
     const renewal = client.subscription?.renewalDate
     if (!renewal) return false
-    const date = typeof renewal.toDate === 'function' ? renewal.toDate() : new Date(renewal)
-    if (Number.isNaN(date.getTime())) return false
+    const date = normalizeTimestamp(renewal)
+    if (!date) return false
     const diff = date.getTime() - nowMs
     return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000
   }).length

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { normalizeTimestamp } from '@/utils/timestamp'
 
 function PerformanceAlerts({
   creatives,
@@ -66,8 +67,8 @@ function PerformanceAlerts({
 
       const expired = Array.isArray(client.extraCredits)
         ? client.extraCredits.filter((pack) => Number(pack.creditsRemaining || 0) > 0).some((pack) => {
-            const expiry = pack.expiryDate?.toDate ? pack.expiryDate.toDate() : new Date(pack.expiryDate)
-            return !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now()
+            const expiry = normalizeTimestamp(pack.expiryDate)
+            return expiry !== null && expiry.getTime() < Date.now()
           })
         : false
 

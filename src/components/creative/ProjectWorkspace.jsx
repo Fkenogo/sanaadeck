@@ -4,24 +4,9 @@ import DeliverableUploader from '@/components/projects/DeliverableUploader'
 import FileGallery from '@/components/projects/FileGallery'
 import { db } from '@/services/firebase'
 import { doc, getDoc } from 'firebase/firestore'
+import { toMillis, formatDateTime } from '@/utils/timestamp'
 
 const PAGE_SIZE = 20
-
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 0
-  return date.getTime()
-}
-
-function formatDateTime(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleString()
-}
 
 function shortenUrl(url = '', max = 96) {
   const text = String(url || '')
@@ -62,21 +47,26 @@ function getTotalTrackedMinutes(project) {
 
 function statusClasses(status) {
   const map = {
-    pending_confirmation: 'bg-yellow-100 text-yellow-800',
-    confirmed: 'bg-blue-100 text-blue-800',
-    in_progress: 'bg-purple-100 text-purple-800',
-    ready_for_qc: 'bg-orange-100 text-orange-800',
-    client_review: 'bg-indigo-100 text-indigo-800',
-    approved: 'bg-green-100 text-green-800',
-    revision_requested: 'bg-red-100 text-red-800',
-    resolved: 'bg-green-100 text-green-800',
-    needs_attention: 'bg-amber-100 text-amber-800',
+    pending: 'bg-yellow-500/10 text-yellow-400',
+    assigned: 'bg-blue-500/10 text-blue-400',
+    pending_confirmation: 'bg-yellow-500/10 text-yellow-400',
+    confirmed: 'bg-blue-500/10 text-blue-400',
+    in_progress: 'bg-[#C9A227]/10 text-[#C9A227]',
+    review: 'bg-orange-500/10 text-orange-400',
+    revision: 'bg-red-500/10 text-red-400',
+    completed: 'bg-emerald-500/10 text-emerald-400',
+    ready_for_qc: 'bg-orange-500/10 text-orange-400',
+    client_review: 'bg-indigo-500/10 text-indigo-400',
+    approved: 'bg-emerald-500/10 text-emerald-400',
+    revision_requested: 'bg-red-500/10 text-red-400',
+    resolved: 'bg-emerald-500/10 text-emerald-400',
+    needs_attention: 'bg-amber-500/10 text-amber-400',
   }
   return map[status] || 'bg-muted text-foreground'
 }
 
 function StatusPill({ status }) {
-  return <span className={`rounded px-2 py-0.5 text-xs ${statusClasses(status)}`}>{(status || 'unknown').replaceAll('_', ' ')}</span>
+  return <span className={`rounded-full px-2 py-0.5 text-xs ${statusClasses(status)}`}>{(status || 'unknown').replaceAll('_', ' ')}</span>
 }
 
 function PreviewPanel({ url, compact = false }) {
@@ -148,7 +138,7 @@ function CommentNode({
 }) {
   const authorLabel = getUserLabel?.(comment.authorId, comment.authorDisplayName, comment.authorEmail) || displayIdentity(comment, comment.authorId || 'unknown')
   return (
-    <div id={anchorId} className={`rounded border border-border bg-white p-2 ${level > 0 ? 'ml-6 mt-2' : ''}`}>
+    <div id={anchorId} className={`rounded-xl border border-white/5 bg-[#1F1F1F] p-3 ${level > 0 ? 'ml-6 mt-2 bg-[#161616]' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {comment.authorRole || 'user'} · {authorLabel} · {formatDateTime(comment.createdAt)}
@@ -263,6 +253,9 @@ function ProjectWorkspace({
   const [userDirectory, setUserDirectory] = useState({})
   const [noteReplyTextByNote, setNoteReplyTextByNote] = useState({})
   const backfillAttemptedProjectRef = useRef('')
+  const commentInitializedRef = useRef(false)
+  const seenCommentIdsRef = useRef(new Set())
+  const [unreadComments, setUnreadComments] = useState(0)
 
   useEffect(() => {
     setActiveTab(initialTab || 'overview')
@@ -276,6 +269,9 @@ function ProjectWorkspace({
     setSelectedPreviewUrl('')
     setReplyTo('')
     setReplyText('')
+    setUnreadComments(0)
+    commentInitializedRef.current = false
+    seenCommentIdsRef.current = new Set()
   }, [project.id])
 
   useEffect(() => {
@@ -442,6 +438,24 @@ function ProjectWorkspace({
     const timer = setInterval(() => setTrackedSeconds((seconds) => seconds + 1), 1000)
     return () => clearInterval(timer)
   }, [tracking])
+
+  useEffect(() => {
+    if (!commentInitializedRef.current) {
+      commentsFirstPage.forEach((c) => seenCommentIdsRef.current.add(c.id))
+      commentInitializedRef.current = true
+      return
+    }
+    if (activeTab === 'review') {
+      commentsFirstPage.forEach((c) => seenCommentIdsRef.current.add(c.id))
+      setUnreadComments(0)
+      return
+    }
+    let count = 0
+    commentsFirstPage.forEach((c) => {
+      if (c.authorId !== currentUser?.uid && !seenCommentIdsRef.current.has(c.id)) count++
+    })
+    if (count > 0) setUnreadComments(count)
+  }, [commentsFirstPage, activeTab, currentUser?.uid])
 
   useEffect(() => {
     function isTypingTarget(target) {
@@ -937,19 +951,20 @@ function ProjectWorkspace({
     const shortcuts = [
       { key: 'overview', label: '1 Overview' },
       { key: 'production', label: '2 Production' },
-      { key: 'review', label: '3 Review' },
+      { key: 'review', label: '3 Review', badge: unreadComments },
       { key: 'activity', label: '4 Activity' },
     ]
     return (
-      <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded border border-border bg-white px-3 py-2 shadow-sm">
+      <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-[#141414] px-4 py-3 shadow-xl">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {shortcuts.map((entry) => (
             <button
               key={`shortcut-${entry.key}`}
-              className={`rounded px-2 py-1 ${activeTab === entry.key ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
+              className={`relative rounded-lg px-2.5 py-1 text-xs transition-all ${activeTab === entry.key ? 'bg-[#C9A227] text-black font-medium' : 'bg-white/5 text-zinc-400 hover:text-white'}`}
               onClick={() => setActiveTab(entry.key)}
             >
               {entry.label}
+              {entry.badge > 0 && <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">{entry.badge > 9 ? '9+' : entry.badge}</span>}
             </button>
           ))}
           <button className="rounded bg-muted px-2 py-1" onClick={() => onClose?.()}>Esc Close</button>
@@ -964,49 +979,64 @@ function ProjectWorkspace({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-3 backdrop-blur-[1px]">
-      <div className="h-[94vh] w-full max-w-[1400px] overflow-hidden rounded-xl border border-border bg-slate-50 shadow-2xl">
-        <header className="border-b border-border bg-white px-5 py-4">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
+      <div className="h-[94vh] w-full max-w-[1400px] overflow-hidden rounded-3xl border border-white/10 bg-[#111111] shadow-[0_25px_80px_rgba(0,0,0,0.8)]">
+        <header className="border-b border-white/5 bg-[#141414] px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold">Project Workspace</h2>
-              <p className="text-sm text-muted-foreground">{project.title} · {project.deliverableType}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <h2 className="text-xl font-bold text-white">Project Workspace</h2>
+              <p className="text-sm text-zinc-400">{project.title} · {project.deliverableType}</p>
+              <p className="mt-1 text-xs text-zinc-500">
                 Active now: {activePresence.length > 0
                   ? activePresence.map((entry) => getUserLabel(entry.uid, entry.displayName, entry.email)).join(', ')
                   : 'No active collaborators'}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <StatusPill status={project.status} />
-              <button className="rounded border border-border px-3 py-2 text-sm" onClick={onClose}>Close</button>
+            <div className="flex flex-wrap items-center gap-2">
+              {canRunTimeTracker && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-1.5">
+                  <span className={`font-mono text-xs tabular-nums ${tracking ? 'text-[#C9A227]' : 'text-zinc-500'}`}>
+                    {`${Math.floor(trackedSeconds / 60).toString().padStart(2, '0')}:${(trackedSeconds % 60).toString().padStart(2, '0')}`}
+                  </span>
+                  {tracking ? (
+                    <button className="text-xs text-zinc-400 transition-all hover:text-white" onClick={handleStopTimerAndLog} disabled={saving}>Stop & log</button>
+                  ) : (
+                    <button className="text-xs text-[#C9A227] transition-all hover:opacity-80" onClick={() => setTracking(true)} disabled={saving}>Start timer</button>
+                  )}
+                </div>
+              )}
+              <StatusPill status={project.workflowStatus || project.status} />
+              <button className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:border-white/20 transition-all" onClick={onClose}>Close</button>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               { key: 'overview', label: 'Overview' },
               { key: 'production', label: 'Production' },
-              { key: 'review', label: 'Review & comments' },
+              { key: 'review', label: 'Review & comments', badge: unreadComments },
               { key: 'activity', label: 'Activity' },
             ].map((tab) => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`rounded px-3 py-1.5 text-sm ${activeTab === tab.key ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`relative rounded-xl px-4 py-1.5 text-sm font-medium transition-all ${activeTab === tab.key ? 'bg-[#C9A227] text-black' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}>
                 {tab.label}
+                {tab.badge > 0 && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{tab.badge > 9 ? '9+' : tab.badge}</span>}
               </button>
             ))}
           </div>
         </header>
 
-        <div className="h-[calc(94vh-126px)] overflow-auto p-5">
+        <div className="h-[calc(94vh-126px)] overflow-auto bg-[#0F0F0F] p-5">
           {activeTab === 'overview' ? (
             <div className="grid gap-4 xl:grid-cols-5">
-              <section className="rounded border border-border bg-white p-4 text-sm xl:col-span-2">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm xl:col-span-2">
                 <h3 className="mb-3 font-semibold">Project brief</h3>
                 <p><span className="font-medium">Title:</span> {project.title}</p>
                 <p><span className="font-medium">Deliverable:</span> {project.deliverableType}</p>
                 <p><span className="font-medium">Created:</span> {formatDateTime(project.createdAt)}</p>
                 <p><span className="font-medium">Deadline:</span> {formatDateTime(project.deadline)}</p>
                 {waitingForReview ? <p className="mt-3 rounded bg-muted p-2 text-xs text-muted-foreground">Work submitted. Waiting for quality control or client review.</p> : null}
-                <p className="mt-3 whitespace-pre-wrap text-muted-foreground">{project.brief || project.description || 'No brief provided.'}</p>
+                <p className="mt-3 whitespace-pre-wrap text-muted-foreground">
+                  {project?.legacyBriefText || project?.brief?.projectOverview || project.description || 'No brief provided.'}
+                </p>
                 <div className="mt-4 rounded border border-border p-3">
                   <p className="font-semibold">Time tracking</p>
                   <p className="mt-1 text-xs text-muted-foreground">Session tracked: {sessionMinutes} min</p>
@@ -1136,7 +1166,7 @@ function ProjectWorkspace({
                 </div>
               </section>
 
-              <section className="rounded border border-border bg-white p-4 text-sm xl:col-span-3">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm xl:col-span-3">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="font-semibold">Large preview stage</h3>
                   <button className="rounded border border-border px-3 py-1 text-xs" onClick={handleOpenFullscreen}>Open fullscreen</button>
@@ -1166,7 +1196,7 @@ function ProjectWorkspace({
 
           {activeTab === 'production' ? (
             <div className="grid gap-4 xl:grid-cols-3">
-              <section className="rounded border border-border bg-white p-4 text-sm xl:col-span-2">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm xl:col-span-2">
                 <h3 className="font-semibold">Production notes</h3>
                 <label className="mb-1 mt-3 block">Actual credits used</label>
                 <input type="number" min="0" step="1" value={actualCreditsUsed} onChange={(e) => setActualCreditsUsed(Number(e.target.value))} className="w-full rounded border border-border px-3 py-2" disabled={!canAdjustCreditsUsed} />
@@ -1176,7 +1206,7 @@ function ProjectWorkspace({
                 {!canSubmitForQC ? <p className="mt-2 text-xs text-muted-foreground">{submitQcReason}</p> : null}
               </section>
 
-              <section className="rounded border border-border bg-white p-4 text-sm">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm">
                 <h3 className="font-semibold">Deliverable upload</h3>
                 {canUploadDeliverables ? (
                   <div className="mt-2 space-y-3">
@@ -1221,7 +1251,7 @@ function ProjectWorkspace({
                 {versionsHasMore ? <button className="mt-2 rounded border border-border px-2 py-1 text-xs" onClick={handleLoadMoreVersions} disabled={versionsLoadingMore}>{versionsLoadingMore ? 'Loading...' : 'Load more versions'}</button> : null}
               </section>
 
-              <section className="rounded border border-border bg-white p-4 text-sm">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm">
                 <h3 className="font-semibold">Notes timeline</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Saved notes with author and timestamp.</p>
                 <div className="mt-3 max-h-[38vh] space-y-2 overflow-auto pr-1">
@@ -1289,7 +1319,7 @@ function ProjectWorkspace({
 
           {activeTab === 'review' ? (
             <div className="grid gap-4 xl:grid-cols-12">
-              <section className="rounded border border-border bg-white p-4 text-sm xl:col-span-4">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm xl:col-span-4">
                 <h3 className="font-semibold">Comment anchors</h3>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">
                   <span className="rounded bg-amber-100 px-2 py-0.5 text-amber-800">needs attention: {commentsByStatus.needs_attention || 0}</span>
@@ -1307,7 +1337,7 @@ function ProjectWorkspace({
                 {commentsHasMore ? <button className="mt-2 rounded border border-border px-2 py-1 text-xs" onClick={handleLoadMoreComments} disabled={commentsLoadingMore}>{commentsLoadingMore ? 'Loading...' : 'Load more comments'}</button> : null}
               </section>
 
-              <section className="rounded border border-border bg-white p-4 text-sm xl:col-span-8">
+              <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm xl:col-span-8">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold">Comments (threaded)</h3>
                   <select value={commentFilter} onChange={(e) => setCommentFilter(e.target.value)} className="rounded border border-border px-2 py-1 text-xs">
@@ -1365,7 +1395,7 @@ function ProjectWorkspace({
           ) : null}
 
           {activeTab === 'activity' ? (
-            <section className="rounded border border-border bg-white p-4 text-sm">
+            <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5 text-sm">
               <h3 className="font-semibold">Activity feed (real-time)</h3>
               <div className="mt-3 max-h-[62vh] space-y-2 overflow-auto">
                 {activities.length > 0 ? activities.map((entry) => (

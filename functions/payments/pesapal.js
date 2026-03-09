@@ -2,10 +2,20 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
 
-// Pesapal Configuration
-const PESAPAL_CONSUMER_KEY = functions.config().pesapal.consumer_key;
-const PESAPAL_CONSUMER_SECRET = functions.config().pesapal.consumer_secret;
-const PESAPAL_ENV = functions.config().pesapal.env || "live"; // 'live' or 'sandbox'
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+// Pesapal Configuration (firebase-functions v7 compatible)
+const PESAPAL_CONSUMER_KEY = getEnv("PESAPAL_CONSUMER_KEY");
+const PESAPAL_CONSUMER_SECRET = getEnv("PESAPAL_CONSUMER_SECRET");
+const PESAPAL_ENV = getEnv("PESAPAL_ENV") || "live"; // 'live' or 'sandbox'
+const PESAPAL_IPN_ID = getEnv("PESAPAL_IPN_ID");
+const APP_URL = getEnv("APP_URL");
 
 const PESAPAL_API_URL = PESAPAL_ENV === "live" ?
   "https://pay.pesapal.com/v3" :
@@ -18,6 +28,10 @@ const PESAPAL_API_URL = PESAPAL_ENV === "live" ?
  * const token = await getPesapalAuthToken();
  */
 async function getPesapalAuthToken() {
+  if (!PESAPAL_CONSUMER_KEY || !PESAPAL_CONSUMER_SECRET) {
+    throw new Error("Missing Pesapal credentials: set PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET");
+  }
+
   try {
     const response = await axios.post(`${PESAPAL_API_URL}/api/Auth/RequestToken`, {
       consumer_key: PESAPAL_CONSUMER_KEY,
@@ -43,8 +57,11 @@ async function getPesapalAuthToken() {
  */
 exports.registerPesapalIPN = functions.https.onRequest(async (req, res) => {
   try {
+    if (!APP_URL) {
+      return res.status(500).json({success: false, error: "Missing APP_URL environment variable"});
+    }
     const token = await getPesapalAuthToken();
-    const ipnUrl = `${functions.config().app.url}/api/pesapal-ipn`;
+    const ipnUrl = `${APP_URL}/api/pesapal-ipn`;
 
     const response = await axios.post(
         `${PESAPAL_API_URL}/api/URLSetup/RegisterIPN`,
@@ -121,6 +138,13 @@ exports.initiatePesapalPayment = functions.https.onCall(async (data, context) =>
   }
 
   try {
+    if (!APP_URL || !PESAPAL_IPN_ID) {
+      throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Missing APP_URL or PESAPAL_IPN_ID environment variable",
+      );
+    }
+
     const token = await getPesapalAuthToken();
 
     // Create payment record first
@@ -133,8 +157,8 @@ exports.initiatePesapalPayment = functions.https.onCall(async (data, context) =>
       currency: currency,
       amount: parseFloat(amount),
       description: reason || `SanaaDeck ${tier || "Subscription"}`,
-      callback_url: `${functions.config().app.url}/payment-success?payment_id=${paymentId}`,
-      notification_id: functions.config().pesapal.ipn_id,
+      callback_url: `${APP_URL}/payment-success?payment_id=${paymentId}`,
+      notification_id: PESAPAL_IPN_ID,
       billing_address: {
         email_address: email,
         phone_number: phoneNumber || "",

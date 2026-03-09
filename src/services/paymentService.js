@@ -8,6 +8,7 @@ const EXTRA_CREDIT_PACK_SIZE = 10
 class PaymentService {
   constructor() {
     this.initiatePesapalPaymentCallable = httpsCallable(functions, 'initiatePesapalPayment')
+    this.checkPesapalPaymentStatusCallable = httpsCallable(functions, 'checkPesapalPaymentStatus')
     this.simulatePayments = import.meta.env.VITE_PAYMENT_SIMULATE === 'true'
   }
 
@@ -55,6 +56,15 @@ class PaymentService {
     const snapshot = await getDoc(doc(db, 'payments', paymentId))
     if (!snapshot.exists()) return null
     return { id: snapshot.id, ...snapshot.data() }
+  }
+
+  async verifyPesapalPaymentStatus(trackingId) {
+    if (!trackingId) {
+      throw new Error('trackingId is required')
+    }
+
+    const response = await this.checkPesapalPaymentStatusCallable({ trackingId })
+    return response.data
   }
 
   async purchaseExtraCredits({ clientId }) {

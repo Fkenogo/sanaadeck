@@ -9,6 +9,8 @@ const expiry = require("./credits/expiry");
 const renewal = require("./credits/renewal");
 const {migrateWorkspaceData} = require("./workspace/migration");
 const cps = require("./performance/cpsCalculator");
+const createProject = require("./projects/createProject");
+const designCatalog = require("./catalog/designCatalog");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -35,6 +37,8 @@ exports.triggerMonthlyCreditAllocationJob = renewal.triggerMonthlyCreditAllocati
 exports.runMonthlyCPSCalculation = cps.runMonthlyCPSCalculation;
 exports.triggerMonthlyCPSCalculation = cps.triggerMonthlyCPSCalculation;
 exports.overrideCreativePerformanceReview = cps.overrideCreativePerformanceReview;
+exports.createProjectWithReservation = createProject.createProjectWithReservation;
+exports.getDesignCatalog = designCatalog.getDesignCatalog;
 exports.runWorkspaceMigration = onCall({
   timeoutSeconds: 540,
   memory: "1GiB",

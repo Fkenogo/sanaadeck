@@ -1,13 +1,7 @@
 import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { db } from './firebase'
 import { TIER_BY_KEY } from '@/utils/constants'
-
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  return 0
-}
+import { toMillis } from '../utils/timestamp'
 
 class ClientService {
   subscribeToPayments(clientId, onData, onError) {

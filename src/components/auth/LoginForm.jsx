@@ -27,7 +27,6 @@ function LoginForm() {
 
     try {
       await signIn(email.trim(), password)
-      console.log('[LoginForm] Login successful')
       navigate(from, { replace: true })
     } catch (submitError) {
       console.error('[LoginForm] Login failed:', submitError)

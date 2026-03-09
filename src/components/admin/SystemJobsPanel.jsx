@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react'
+import { formatDateTime } from '@/utils/timestamp'
 
 const PAGE_SIZE = 20
-
-function toDateTime(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleString()
-}
 
 function SystemJobsPanel({ jobs = [], onResume }) {
   const [statusFilter, setStatusFilter] = useState('all')
@@ -86,7 +80,7 @@ function SystemJobsPanel({ jobs = [], onResume }) {
                 const canResume = typeof onResume === 'function' && Boolean(resumeCursor)
                 return (
                   <tr key={job.id} className="border-b border-border/60">
-                    <td className="px-2 py-2">{toDateTime(job.startedAt || job.createdAt)}</td>
+                    <td className="px-2 py-2">{formatDateTime(job.startedAt || job.createdAt)}</td>
                     <td className="px-2 py-2">{job.status || 'unknown'}</td>
                     <td className="px-2 py-2">{job.requestedBy || '-'}</td>
                     <td className="px-2 py-2">{Number(result.scanned || 0)}</td>

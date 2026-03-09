@@ -7,6 +7,9 @@ export const USER_ROLES = {
   SUPER_ADMIN: 'super_admin',
 }
 
+// UI display values only — NOT authoritative for enforcement.
+// The Cloud Function reads the live config from systemConfig/subscriptionTiers in Firestore.
+// Keep display values in sync with that document when tiers change.
 export const SUBSCRIPTION_TIERS = {
   STARTER: { key: 'starter', creditsPerMonth: 15, priceUsd: 349, activeRequestLimit: 1 },
   GROWTH: { key: 'growth', creditsPerMonth: 30, priceUsd: 599, activeRequestLimit: 2 },
@@ -55,6 +58,8 @@ export const ACTIVE_PROJECT_STATUSES = [
 
 export const ADMIN_MODULE_KEYS = [
   'overview',
+  'finance',
+  'operations',
   'users',
   'clients',
   'creatives',
@@ -62,7 +67,8 @@ export const ADMIN_MODULE_KEYS = [
   'credit_transactions',
   'payments_subscriptions',
   'notifications',
-  'template_assets',
+  'briefing_templates',
+  'image_moderation',
   'reports',
   'admins',
 ]
@@ -78,7 +84,8 @@ export const ADMIN_ACTION_KEYS = [
   'warn_creative',
   'suspend_creative',
   'manage_notifications',
-  'manage_template_assets',
+  'manage_briefing_templates',
+  'manage_image_bank',
   'manage_users',
   'manage_admins',
 ]
@@ -87,6 +94,8 @@ export const ADMIN_PERMISSION_PRESETS = {
   project_admin: {
     modules: {
       overview: true,
+      finance: false,
+      operations: true,
       users: false,
       clients: true,
       creatives: true,
@@ -94,7 +103,8 @@ export const ADMIN_PERMISSION_PRESETS = {
       credit_transactions: false,
       payments_subscriptions: false,
       notifications: true,
-      template_assets: false,
+      briefing_templates: false,
+      image_moderation: false,
       reports: true,
       admins: false,
     },
@@ -109,7 +119,8 @@ export const ADMIN_PERMISSION_PRESETS = {
       warn_creative: true,
       suspend_creative: false,
       manage_notifications: true,
-      manage_template_assets: false,
+      manage_briefing_templates: false,
+      manage_image_bank: false,
       manage_users: false,
       manage_admins: false,
     },
@@ -117,6 +128,8 @@ export const ADMIN_PERMISSION_PRESETS = {
   app_admin: {
     modules: {
       overview: true,
+      finance: true,
+      operations: true,
       users: true,
       clients: true,
       creatives: true,
@@ -124,14 +137,15 @@ export const ADMIN_PERMISSION_PRESETS = {
       credit_transactions: true,
       payments_subscriptions: true,
       notifications: true,
-      template_assets: true,
+      briefing_templates: true,
+      image_moderation: true,
       reports: true,
       admins: false,
     },
     actions: {
-      assign_project: false,
-      approve_qc: false,
-      request_revision: false,
+      assign_project: true,
+      approve_qc: true,
+      request_revision: true,
       adjust_project_credits: false,
       adjust_client_credits: true,
       change_client_tier: true,
@@ -139,7 +153,8 @@ export const ADMIN_PERMISSION_PRESETS = {
       warn_creative: true,
       suspend_creative: true,
       manage_notifications: true,
-      manage_template_assets: true,
+      manage_briefing_templates: true,
+      manage_image_bank: true,
       manage_users: true,
       manage_admins: false,
     },

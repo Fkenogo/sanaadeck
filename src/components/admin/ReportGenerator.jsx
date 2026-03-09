@@ -1,15 +1,9 @@
 import { useMemo, useState } from 'react'
-
-function toDateString(value) {
-  if (!value) return ''
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toISOString().slice(0, 10)
-}
+import { formatDateISO, normalizeTimestamp } from '@/utils/timestamp'
 
 function withinRange(value, from, to) {
-  const d = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(d.getTime())) return false
+  const d = normalizeTimestamp(value)
+  if (!d) return false
   if (from && d < new Date(from)) return false
   if (to) {
     const end = new Date(to)
@@ -60,7 +54,7 @@ function ReportGenerator({ clients = [], creatives = [], projects = [], creditTr
       return creditTransactions
         .filter((entry) => withinRange(entry.createdAt, fromDate, toDate))
         .map((entry) => ({
-          date: toDateString(entry.createdAt),
+          date: formatDateISO(entry.createdAt),
           clientId: entry.clientId || '',
           projectId: entry.projectId || '',
           type: entry.type || '',
@@ -78,8 +72,8 @@ function ReportGenerator({ clients = [], creatives = [], projects = [], creditTr
         deliverableType: project.deliverableType,
         confirmedCredits: Number(project.confirmedCredits || 0),
         actualCreditsUsed: Number(project.actualCreditsUsed || 0),
-        createdAt: toDateString(project.createdAt),
-        updatedAt: toDateString(project.updatedAt),
+        createdAt: formatDateISO(project.createdAt),
+        updatedAt: formatDateISO(project.updatedAt),
       }))
   }, [clients, creatives, projects, creditTransactions, reportType, fromDate, toDate])
 

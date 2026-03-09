@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react'
+import { formatDateTime } from '@/utils/timestamp'
 
 const PAGE_SIZE = 50
-
-function toDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleString()
-}
 
 function CreditTransactionsManagementPanel({ transactions = [], clients = [], projects = [] }) {
   const [search, setSearch] = useState('')
@@ -83,7 +77,7 @@ function CreditTransactionsManagementPanel({ transactions = [], clients = [], pr
             {paged.length > 0 ? (
               paged.map((entry) => (
                 <tr key={entry.id} className="border-b border-border/60">
-                  <td className="px-2 py-2">{toDate(entry.createdAt)}</td>
+                  <td className="px-2 py-2">{formatDateTime(entry.createdAt)}</td>
                   <td className="px-2 py-2">
                     <span title={entry.clientId || ''}>{clientLabelById[entry.clientId] || 'Unknown client'}</span>
                   </td>

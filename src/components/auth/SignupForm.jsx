@@ -73,7 +73,6 @@ function SignupForm() {
         specialty: form.specialty,
       })
 
-      console.log('[SignupForm] Signup successful')
       navigate('/dashboard', { replace: true })
     } catch (submitError) {
       console.error('[SignupForm] Signup failed:', submitError)

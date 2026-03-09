@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { useAuth } from '@/hooks/useAuth'
 import CreditBalanceCard from '@/components/credits/CreditBalanceCard'
@@ -25,8 +26,14 @@ const CLIENT_MODULES = [
   { key: 'notifications', label: 'Notifications' },
 ]
 
+const CLIENT_LINKS = [
+  { key: 'templates', label: 'Briefing Templates', to: '/templates' },
+  { key: 'billing', label: 'Billing', to: '/billing' },
+]
+
 function ClientDashboard() {
   const { user, userProfile, signOut } = useAuth()
+  const navigate = useNavigate()
   const [clientData, setClientData] = useState(null)
   const [creditBalance, setCreditBalance] = useState(null)
   const [projects, setProjects] = useState([])
@@ -323,10 +330,10 @@ function ClientDashboard() {
 
   function renderProjects() {
     return (
-      <section className="rounded border border-border p-4">
+      <section className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold">Projects</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-base font-semibold text-white">Projects</h2>
+          <p className="text-sm text-zinc-500">
             Active requests: {activeCount} of {activeLimit}
           </p>
         </div>
@@ -341,7 +348,7 @@ function ClientDashboard() {
             <button
               key={tab.key}
               onClick={() => setSelectedTab(tab.key)}
-              className={`rounded px-3 py-1 text-sm ${selectedTab === tab.key ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
+              className={`rounded-xl px-3 py-1 text-sm ${selectedTab === tab.key ? 'bg-[#C9A227] text-black font-semibold' : 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10'}`}
             >
               {tab.label}
             </button>
@@ -408,18 +415,18 @@ function ClientDashboard() {
     }
 
     return (
-      <section className="rounded border border-border p-4">
-        <h2 className="text-base font-semibold">Workspace</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Select a project to open the shared collaborative workspace.</p>
+      <section className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-5">
+        <h2 className="text-base font-semibold text-white">Workspace</h2>
+        <p className="mt-1 text-sm text-zinc-500">Select a project to open the shared collaborative workspace.</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {projects.map((project) => (
             <button
               key={project.id}
               onClick={() => openWorkspace(project.id)}
-              className="rounded border border-border px-3 py-2 text-left text-sm hover:bg-muted"
+              className="flex items-center justify-between rounded-xl bg-[#1F1F1F] border border-white/5 px-4 py-3 text-left text-sm hover:border-white/10 transition-all"
             >
-              <p className="font-medium">{project.title}</p>
-              <p className="text-xs text-muted-foreground">{project.status?.replaceAll('_', ' ') || 'unknown'}</p>
+              <p className="font-medium text-white">{project.title}</p>
+              <p className="text-xs text-zinc-500">{project.status?.replaceAll('_', ' ') || 'unknown'}</p>
             </button>
           ))}
         </div>
@@ -440,13 +447,13 @@ function ClientDashboard() {
             activeLimit={activeLimit}
             onBuyExtraCredits={openExtraCreditsCheckout}
           />
-          <div className="rounded border border-border p-4 text-sm text-muted-foreground">
+          <div className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-4 text-sm text-zinc-500">
             Total projects: {projects.length} · Credits remaining: {Number(creditBalance?.totalCredits || 0)} · Active requests: {activeCount}
           </div>
-          <section className="rounded border border-border p-4">
+          <section className="rounded-2xl bg-[#1A1A1A] border border-white/[0.06] p-5">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">Active requests</h3>
-              <p className="text-xs text-muted-foreground">{activeCount} of {activeLimit}</p>
+              <h3 className="text-sm font-semibold text-white">Active requests</h3>
+              <p className="text-xs text-zinc-500">{activeCount} of {activeLimit}</p>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {activeProjects.length > 0 ? (
@@ -519,49 +526,61 @@ function ClientDashboard() {
   }
 
   return (
-    <main className="flex h-screen overflow-hidden bg-background">
-      <aside className="w-56 shrink-0 border-r border-border p-4">
-        <h1 className="text-xl font-semibold">Client Console</h1>
-        <p className="mt-1 text-xs text-muted-foreground">{clientData?.businessName || userProfile?.displayName || 'Client'}</p>
+    <main className="flex h-screen overflow-hidden bg-[#0F0F0F]">
+      <aside className="w-56 shrink-0 border-r border-white/5 bg-[#111111] p-5 flex flex-col">
+        <h1 className="text-lg font-bold text-white tracking-tight">Client Console</h1>
+        <p className="mt-0.5 text-xs text-[#C9A227]">{clientData?.businessName || userProfile?.displayName || 'Client'}</p>
 
         <nav className="mt-4 space-y-1">
           {CLIENT_MODULES.map((module) => (
             <button
               key={module.key}
               onClick={() => setActiveModule(module.key)}
-              className={`block w-full rounded px-3 py-2 text-left text-sm ${activeModule === module.key ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+              className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-all ${activeModule === module.key ? 'bg-[#1F1F1F] text-[#C9A227] border-l-2 border-[#C9A227] font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
             >
               <span className="flex items-center justify-between gap-2">
                 <span>{module.label}</span>
                 {module.key === 'notifications' && unreadNotificationsCount > 0 ? (
-                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white">{unreadNotificationsCount}</span>
+                  <span className="rounded-full bg-[#C9A227] px-1.5 py-0.5 text-[10px] text-black font-bold">{unreadNotificationsCount}</span>
                 ) : null}
               </span>
             </button>
           ))}
+
+          <div className="my-2 border-t border-white/5" />
+
+          {CLIENT_LINKS.map((link) => (
+            <button
+              key={link.key}
+              onClick={() => navigate(link.to)}
+              className="block w-full rounded-xl px-3 py-2 text-left text-sm text-zinc-400 hover:text-white hover:bg-white/5"
+            >
+              {link.label}
+            </button>
+          ))}
         </nav>
 
-        <button className="mt-6 w-full rounded border border-border px-3 py-2 text-sm" onClick={signOut}>
+        <button className="mt-auto rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:border-white/20 transition-all" onClick={signOut}>
           Sign out
         </button>
       </aside>
 
-      <section className="flex-1 overflow-auto p-6">
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <section className="flex-1 overflow-auto bg-[#0F0F0F] p-6">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Client Dashboard</h2>
-            <p className="text-sm text-muted-foreground">Welcome, {clientData?.businessName || userProfile?.displayName || 'Client'}.</p>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-2xl font-bold text-white">Client Dashboard</h2>
+            <p className="text-sm text-zinc-500 mt-0.5">Welcome, {clientData?.businessName || userProfile?.displayName || 'Client'}.</p>
+            <p className="text-sm text-zinc-500">
               Total projects: {projects.length} · Credits remaining: {Number(creditBalance?.totalCredits || 0)} · Active requests: {activeCount}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded border border-border px-2 py-1 text-xs font-semibold uppercase">
+            <span className="rounded-full bg-[#C9A227]/10 border border-[#C9A227]/20 px-2.5 py-0.5 text-xs font-semibold uppercase text-[#C9A227]">
               {tier}
             </span>
             <NotificationCenter userId={clientId} onOpenNotificationsPage={() => setActiveModule('notifications')} />
             <button
-              className="rounded border border-border px-3 py-2 text-sm"
+              className="rounded-xl bg-[#C9A227] px-4 py-2 text-sm font-semibold text-black hover:bg-[#E3C96E] disabled:opacity-50"
               onClick={() => setIsModalOpen(true)}
               disabled={atLimit}
               title={atLimit ? `Active request limit reached (${activeCount}/${activeLimit})` : 'Create new request'}
@@ -571,7 +590,7 @@ function ClientDashboard() {
           </div>
         </header>
 
-        {error ? <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</p> : null}
 
         {renderModule()}
       </section>

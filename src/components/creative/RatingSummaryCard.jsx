@@ -1,9 +1,4 @@
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleDateString()
-}
+import { formatDate } from '@/utils/timestamp'
 
 function getTrendSymbol(value) {
   if (value > 0) return '↑'

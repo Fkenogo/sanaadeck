@@ -1,14 +1,8 @@
 import { useMemo, useState } from 'react'
 import PaymentMonitoringPanel from '@/components/admin/PaymentMonitoringPanel'
+import { formatDateTime } from '@/utils/timestamp'
 
 const PAGE_SIZE = 50
-
-function toDate(value) {
-  if (!value) return 'Unknown'
-  const d = value?.toDate ? value.toDate() : new Date(value)
-  if (Number.isNaN(d.getTime())) return 'Unknown'
-  return d.toLocaleString()
-}
 
 function formatProvider(provider) {
   const normalized = String(provider || '').trim().toLowerCase()
@@ -73,7 +67,7 @@ function PaymentsSubscriptionsManagementPanel({ payments = [], clients = [], onU
                   {paged.length > 0 ? (
                     paged.map((entry) => (
                       <tr key={entry.id} className="border-b border-border/60">
-                        <td className="px-2 py-2">{toDate(entry.createdAt)}</td>
+                        <td className="px-2 py-2">{formatDateTime(entry.createdAt)}</td>
                         <td className="px-2 py-2">
                           <span title={entry.clientId || ''}>{clientLabelById[entry.clientId] || 'Unknown client'}</span>
                         </td>
@@ -132,7 +126,7 @@ function PaymentsSubscriptionsManagementPanel({ payments = [], clients = [], onU
                           <option value="canceled">canceled</option>
                         </select>
                       </td>
-                      <td className="px-2 py-2">{toDate(client.subscription?.renewalDate)}</td>
+                      <td className="px-2 py-2">{formatDateTime(client.subscription?.renewalDate)}</td>
                     </tr>
                   ))}
                 </tbody>

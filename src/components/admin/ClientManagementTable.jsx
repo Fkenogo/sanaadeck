@@ -1,15 +1,7 @@
 import { useMemo, useState } from 'react'
+import { toMillis, formatDate } from '@/utils/timestamp'
 
 const PAGE_SIZE = 50
-
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 0
-  return date.getTime()
-}
 
 function exportRowsAsCsv(rows) {
   if (!rows.length) return
@@ -184,7 +176,7 @@ function ClientManagementTable({
                   <td className="px-2 py-2">{Number(client.subscription?.creditsRemaining || 0)}</td>
                   <td className="px-2 py-2">{Number(client.subscription?.creditsUsed || 0)}</td>
                   <td className="px-2 py-2">${Number(client.stats?.lifetimeValue || 0).toFixed(2)}</td>
-                  <td className="px-2 py-2">{new Date(toMillis(client.updatedAt || client.createdAt)).toLocaleDateString()}</td>
+                  <td className="px-2 py-2">{formatDate(client.updatedAt || client.createdAt)}</td>
                   <td className="px-2 py-2">
                     <div className="flex flex-wrap gap-2">
                       <button className="rounded border border-border px-2 py-1 text-xs" onClick={() => onViewClient?.(client.id)}>View</button>

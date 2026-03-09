@@ -1,9 +1,4 @@
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = value?.toDate ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleString()
-}
+import { formatDateTime } from '@/utils/timestamp'
 
 function NotificationsPanel({ notifications = [] }) {
   return (
@@ -16,7 +11,7 @@ function NotificationsPanel({ notifications = [] }) {
             <div key={entry.id} className="rounded border border-border p-2">
               <p className="font-medium">{entry.title || 'Update'}</p>
               <p className="text-muted-foreground">{entry.message || 'No details provided.'}</p>
-              <p className="text-xs text-muted-foreground">{formatDate(entry.createdAt)}</p>
+              <p className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</p>
             </div>
           ))
         ) : (

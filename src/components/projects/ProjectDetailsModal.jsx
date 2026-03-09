@@ -1,14 +1,16 @@
 import { format } from 'date-fns'
+import { normalizeTimestamp } from '@/utils/timestamp'
 
 function formatDate(timestamp) {
   if (!timestamp) return 'Unknown'
-  const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
+  const date = normalizeTimestamp(timestamp)
+  if (!date) return 'Unknown'
   return format(date, 'PPP p')
 }
 
 function ProjectDetailsModal({ open, project, onClose }) {
   if (!open || !project) return null
+  const briefOverview = project?.brief?.projectOverview || project?.legacyBriefText || project?.description || 'No brief provided.'
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
@@ -20,9 +22,10 @@ function ProjectDetailsModal({ open, project, onClose }) {
 
         <div className="mt-4 space-y-2 text-sm">
           <p><span className="font-semibold">Title:</span> {project.title}</p>
-          <p><span className="font-semibold">Deliverable:</span> {project.deliverableType}</p>
-          <p><span className="font-semibold">Status:</span> {project.status}</p>
-          <p><span className="font-semibold">Estimated credits:</span> {project.estimatedCredits ?? 0}</p>
+          <p><span className="font-semibold">Category:</span> {project.categoryTitle || project.category || '-'}</p>
+          <p><span className="font-semibold">Deliverable:</span> {project.deliverableTitle || project.deliverableType}</p>
+          <p><span className="font-semibold">Status:</span> {project.workflowStatus || project.status}</p>
+          <p><span className="font-semibold">Estimated credits:</span> {project.credits ?? project.estimatedCredits ?? 0}</p>
           <p><span className="font-semibold">Confirmed credits:</span> {project.confirmedCredits ?? 0}</p>
           <p><span className="font-semibold">Actual credits used:</span> {project.actualCreditsUsed ?? 'N/A'}</p>
           <p><span className="font-semibold">Created:</span> {formatDate(project.createdAt)}</p>
@@ -32,7 +35,7 @@ function ProjectDetailsModal({ open, project, onClose }) {
 
         <div className="mt-4 rounded border border-border p-3">
           <p className="mb-1 text-sm font-semibold">Brief</p>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{project.brief || project.description || 'No brief provided.'}</p>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{briefOverview}</p>
         </div>
       </div>
     </div>

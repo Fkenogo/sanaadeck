@@ -9,6 +9,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { db } from './firebase'
+import { toMillis } from '../utils/timestamp'
 
 const CREDIT_PACK_STACK_LIMIT = 20
 const DEFAULT_EXTRA_PACK_CREDITS = 10
@@ -30,13 +31,6 @@ const baseCreditEstimates = {
   ad_copy_set: 2,
 }
 
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  if (typeof value === 'number') return value
-  return 0
-}
 
 function isPackValid(pack, now = Timestamp.now()) {
   return toMillis(pack?.expiryDate) > now.toMillis() && Number(pack?.creditsRemaining || 0) > 0

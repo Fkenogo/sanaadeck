@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react'
+import { CREATIVE_SKILL_LABELS } from '@/utils/creativeSkills'
 
 const PAGE_SIZE = 50
-
-function cpsClass(score) {
-  if (score >= 90) return 'text-green-700'
-  if (score >= 70) return 'text-blue-700'
-  if (score >= 50) return 'text-amber-700'
-  return 'text-red-700'
-}
 
 function CreativeManagementTable({
   creatives,
@@ -68,32 +62,35 @@ function CreativeManagementTable({
   const totalPages = Math.max(1, Math.ceil(filteredCreatives.length / PAGE_SIZE))
   const pagedCreatives = filteredCreatives.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
+  const filterCls = "rounded-xl border border-white/10 bg-[#262626] px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-[#C9A227]/40 focus:outline-none"
+  const paginationBtnCls = "rounded-lg border border-white/10 px-3 py-1.5 text-zinc-400 hover:text-white disabled:opacity-30 transition-all"
+
   return (
-    <section className="rounded border border-border p-4">
+    <section className="rounded-2xl border border-white/5 bg-[#1A1A1A] p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Creative Management</h2>
+        <h2 className="text-base font-semibold text-white">Creative Management</h2>
         <div className="flex flex-wrap gap-2">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search creatives" className="rounded border border-border px-2 py-1 text-sm" />
-          <select value={specialtyFilter} onChange={(event) => setSpecialtyFilter(event.target.value)} className="rounded border border-border px-2 py-1 text-sm">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search creatives" className={filterCls} />
+          <select value={specialtyFilter} onChange={(event) => setSpecialtyFilter(event.target.value)} className={filterCls}>
             <option value="all">All specialties</option>
             {specialties.map((specialty) => (
               <option key={specialty} value={specialty}>{specialty}</option>
             ))}
           </select>
-          <select value={tierFilter} onChange={(event) => setTierFilter(event.target.value)} className="rounded border border-border px-2 py-1 text-sm">
+          <select value={tierFilter} onChange={(event) => setTierFilter(event.target.value)} className={filterCls}>
             <option value="all">All tiers</option>
             <option value="junior">Junior</option>
             <option value="mid">Mid</option>
             <option value="senior">Senior</option>
           </select>
-          <select value={performanceFilter} onChange={(event) => setPerformanceFilter(event.target.value)} className="rounded border border-border px-2 py-1 text-sm">
+          <select value={performanceFilter} onChange={(event) => setPerformanceFilter(event.target.value)} className={filterCls}>
             <option value="all">All performance</option>
             <option value="excellent">Excellent</option>
             <option value="good">Good</option>
             <option value="needs_improvement">Needs improvement</option>
             <option value="warning">Warning</option>
           </select>
-          <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded border border-border px-2 py-1 text-sm">
+          <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className={filterCls}>
             <option value="cps_desc">Sort: CPS high-low</option>
             <option value="cps_asc">Sort: CPS low-high</option>
             <option value="active_projects_desc">Sort: Active projects high-low</option>
@@ -105,66 +102,84 @@ function CreativeManagementTable({
         </div>
       </div>
 
-      <div className="mt-3 overflow-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border text-muted-foreground">
-              <th className="px-2 py-2">Name</th>
-              <th className="px-2 py-2">Specialty</th>
-              <th className="px-2 py-2">Tier</th>
-              <th className="px-2 py-2">CPS</th>
-              <th className="px-2 py-2">Active projects</th>
-              <th className="px-2 py-2">Credits this month</th>
-              <th className="px-2 py-2">Utilization</th>
-              <th className="px-2 py-2">Status</th>
-              <th className="px-2 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagedCreatives.length > 0 ? (
-              pagedCreatives.map((creative) => {
-                const cps = Number(creative.performance?.cpsScore || 0)
-                const creditsThisMonth = Number(creative.earnings?.thisMonthCredits || creative.stats?.creditsThisMonth || 0)
-                const utilization = Math.min(100, ((creditsThisMonth || 0) / 120) * 100)
-                const activeProjects = projectsByCreative[creative.id] || 0
+      <div className="mt-3 space-y-2">
+        {pagedCreatives.length > 0 ? (
+          pagedCreatives.map((creative) => {
+            const cps = Number(creative.performance?.cpsScore || 0)
+            const creditsThisMonth = Number(creative.earnings?.thisMonthCredits || creative.stats?.creditsThisMonth || 0)
+            const utilization = Math.min(100, ((creditsThisMonth || 0) / 120) * 100)
+            const activeProjects = projectsByCreative[creative.id] || 0
+            const initials = String(creative.displayName || creative.email || '?').slice(0, 2).toUpperCase()
+            const isSuspended = creative.status === 'suspended'
+            const availability = creative.availabilityStatus || creative.availability || 'available'
+            const loadScore = Number(creative.currentLoadScore || utilization || 0)
+            const experienceLevel = creative.experienceLevel || creative.tier || 'mid'
+            const primarySkills = Array.isArray(creative.primarySkills) ? creative.primarySkills : []
+            const primarySkillsLabel = primarySkills.length > 0
+              ? primarySkills.slice(0, 3).map((skill) => CREATIVE_SKILL_LABELS[skill] || skill).join(', ')
+              : 'Not set'
 
-                return (
-                  <tr key={creative.id} className="border-b border-border/60">
-                    <td className="px-2 py-2">{creative.displayName || creative.email || 'Unknown creative'}</td>
-                    <td className="px-2 py-2">{creative.specialty || 'n/a'}</td>
-                    <td className="px-2 py-2">{creative.tier || 'mid'}</td>
-                    <td className={`px-2 py-2 font-semibold ${cpsClass(cps)}`}>{cps}</td>
-                    <td className="px-2 py-2">{activeProjects}</td>
-                    <td className="px-2 py-2">{creditsThisMonth}</td>
-                    <td className="px-2 py-2">{utilization.toFixed(1)}%</td>
-                    <td className="px-2 py-2">{creative.status || 'active'}</td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-wrap gap-2">
-                        <button className="rounded border border-border px-2 py-1 text-xs" onClick={() => onViewCreative?.(creative.id)}>View</button>
-                        <button className="rounded border border-border px-2 py-1 text-xs" onClick={() => onWarnCreative?.(creative.id)}>Warn</button>
-                        <button className="rounded border border-border px-2 py-1 text-xs" onClick={() => onSuspendCreative?.(creative.id, creative.status !== 'suspended')}>
-                          {creative.status === 'suspended' ? 'Unsuspend' : 'Suspend'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })
-            ) : (
-              <tr>
-                <td className="px-2 py-4 text-muted-foreground" colSpan={9}>No creatives found.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            return (
+              <div key={creative.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/5 bg-[#1F1F1F] p-4 hover:border-white/10 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#C9A227]/15 text-sm font-bold text-[#C9A227]">
+                    {initials}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">{creative.displayName || creative.email || 'Unknown'}</p>
+                    <p className="text-xs text-zinc-500">{creative.specialty || 'n/a'} · {experienceLevel}</p>
+                    <p className="text-[11px] text-zinc-500">Primary skills: {primarySkillsLabel}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">CPS</p>
+                    <p className={`font-bold text-sm ${cps >= 90 ? 'text-emerald-400' : cps >= 70 ? 'text-[#C9A227]' : cps >= 50 ? 'text-amber-500' : 'text-red-400'}`}>{cps}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Projects</p>
+                    <p className="font-semibold text-white">{activeProjects}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Credits</p>
+                    <p className="font-semibold text-white">{creditsThisMonth}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Util.</p>
+                    <p className="font-semibold text-white">{utilization.toFixed(1)}%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Load</p>
+                    <p className="font-semibold text-white">{loadScore.toFixed(1)}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${availability === 'available' ? 'bg-emerald-500/10 text-emerald-400' : availability === 'busy' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {availability}
+                  </span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${isSuspended ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                    {creative.status || 'active'}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button className="rounded-lg border border-white/10 px-2.5 py-1 text-xs text-zinc-400 hover:text-white hover:border-white/20 transition-all" onClick={() => onViewCreative?.(creative.id)}>View</button>
+                    <button className="rounded-lg border border-amber-500/20 px-2.5 py-1 text-xs text-amber-400 hover:border-amber-500/40 transition-all" onClick={() => onWarnCreative?.(creative.id)}>Warn</button>
+                    <button className={`rounded-lg border px-2.5 py-1 text-xs transition-all ${isSuspended ? 'border-emerald-500/20 text-emerald-400 hover:border-emerald-500/40' : 'border-red-500/20 text-red-400 hover:border-red-500/40'}`} onClick={() => onSuspendCreative?.(creative.id, !isSuspended)}>
+                      {isSuspended ? 'Unsuspend' : 'Suspend'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })
+        ) : (
+          <p className="py-6 text-center text-sm text-zinc-500">No creatives found.</p>
+        )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
         <p>Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filteredCreatives.length)} of {filteredCreatives.length}</p>
         <div className="flex gap-2">
-          <button className="rounded border border-border px-2 py-1" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+          <button className={paginationBtnCls} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
           <span>Page {page}/{totalPages}</span>
-          <button className="rounded border border-border px-2 py-1" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+          <button className={paginationBtnCls} disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
         </div>
       </div>
     </section>

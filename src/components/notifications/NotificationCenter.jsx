@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell } from 'lucide-react'
 import { useNotifications } from '@/hooks/useNotifications'
 import notificationService from '@/services/notificationService'
+import { formatDateTime } from '@/utils/timestamp'
 
 const FILTERS = [
   { value: 'all', label: 'All' },
@@ -12,19 +13,6 @@ const FILTERS = [
   { value: 'system', label: 'System' },
 ]
 
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
-}
-
-function formatDate(value) {
-  const ms = toMillis(value)
-  if (!ms) return 'Unknown'
-  return new Date(ms).toLocaleString()
-}
 
 function playNotificationTone() {
   if (typeof window === 'undefined') return
@@ -271,7 +259,7 @@ function NotificationCenter({ userId, onOpenNotificationsPage }) {
                     <span className="text-[10px] uppercase text-muted-foreground">{entry.type || 'system'}</span>
                   </div>
                   <p className="mt-1 text-muted-foreground">{entry.message || 'No details provided.'}</p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">{formatDate(entry.createdAt)}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{formatDateTime(entry.createdAt)}</p>
                 </button>
               ))
             ) : (

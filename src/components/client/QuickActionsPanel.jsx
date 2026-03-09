@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import clientService from '@/services/clientService'
 import { TIER_BY_KEY } from '@/utils/constants'
 import FileUploader from '@/components/common/FileUploader'
+import { formatDate } from '@/utils/timestamp'
 
 function Modal({ title, onClose, children }) {
   return (
@@ -17,12 +18,6 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleDateString()
-}
 
 function formatProviderLabel(provider) {
   const normalized = String(provider || '').trim().toLowerCase()

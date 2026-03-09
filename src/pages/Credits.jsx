@@ -6,22 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import adminService from '@/services/adminService'
 import creditService from '@/services/creditService'
 import { db } from '@/services/firebase'
-
-function toMillis(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 0
-  return date.getTime()
-}
-
-function formatDate(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleString()
-}
+import { toMillis, formatDateTime } from '@/utils/timestamp'
 
 function getTierLabel(tier) {
   if (!tier) return 'Starter'
@@ -295,7 +280,7 @@ function Credits() {
   const exportRows = useMemo(
     () =>
       filteredTransactions.map((entry) => ({
-        date: formatDate(entry.createdAt),
+        date: formatDateTime(entry.createdAt),
         clientId: entry.clientId || '',
         projectId: entry.projectId || '',
         type: entry.type || '',
@@ -646,7 +631,7 @@ function Credits() {
                     className="cursor-pointer border-b border-border/60 hover:bg-muted/40"
                     onClick={() => openTransactionDetails(entry)}
                   >
-                    <td className="px-2 py-2">{formatDate(entry.createdAt)}</td>
+                    <td className="px-2 py-2">{formatDateTime(entry.createdAt)}</td>
                     {isAdmin ? <td className="px-2 py-2">{entry.clientId || '-'}</td> : null}
                     <td className="px-2 py-2">{entry.type || '-'}</td>
                     <td className="px-2 py-2">{entry.source || '-'}</td>
@@ -727,7 +712,7 @@ function Credits() {
             </div>
 
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
-              <p><span className="font-medium">Date:</span> {formatDate(selectedTransaction.createdAt)}</p>
+              <p><span className="font-medium">Date:</span> {formatDateTime(selectedTransaction.createdAt)}</p>
               <p><span className="font-medium">Type:</span> {selectedTransaction.type || '-'}</p>
               <p><span className="font-medium">Source:</span> {selectedTransaction.source || '-'}</p>
               <p><span className="font-medium">Client:</span> {selectedTransaction.clientId || '-'}</p>

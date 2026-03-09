@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { db } from '@/services/firebase'
+import { formatDate } from '@/utils/timestamp'
 
 const TARGETS = {
   rating: 4.2,
@@ -15,12 +16,6 @@ function pct(value, max = 100) {
   return Math.max(0, Math.min(max, n))
 }
 
-function toDateLabel(value) {
-  if (!value) return 'Unknown'
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return date.toLocaleDateString()
-}
 
 function MetricRow({ label, valueLabel, percent, ok }) {
   return (
@@ -83,7 +78,7 @@ function PerformanceReview({ creativeId }) {
     <section className="rounded border border-border p-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-semibold">Performance Review</h3>
-        <p className="text-xs text-muted-foreground">Period: {current.period || toDateLabel(current.createdAt)}</p>
+        <p className="text-xs text-muted-foreground">Period: {current.period || formatDate(current.createdAt)}</p>
       </div>
 
       <div className="mt-3 flex items-end gap-3">

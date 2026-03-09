@@ -18,16 +18,13 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore'
-import { db } from './firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from './firebase'
 import creditService from './creditService'
 import fileService from './fileService'
-
-function normalizeTimestamp(value) {
-  if (!value) return 0
-  if (typeof value.toMillis === 'function') return value.toMillis()
-  if (value instanceof Date) return value.getTime()
-  return 0
-}
+import creativeEarningsService from './creativeEarningsService'
+import { TIER_BY_KEY } from '@/utils/constants'
+import { toMillis } from '../utils/timestamp'
 
 function mapProject(docSnap) {
   return {
@@ -41,14 +38,7 @@ function mapDocs(snapshot) {
 }
 
 function sortProjectsByCreatedAt(projects) {
-  return projects.sort((a, b) => normalizeTimestamp(b.createdAt) - normalizeTimestamp(a.createdAt))
-}
-
-function parseDeadline(deadline) {
-  if (!deadline) return null
-  const date = new Date(deadline)
-  if (Number.isNaN(date.getTime())) return null
-  return Timestamp.fromDate(date)
+  return projects.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
 }
 
 function makeActivity(type, message, actor = {}) {
@@ -113,6 +103,118 @@ function workspaceQuery(projectId, collectionName, pageSize, cursor = null) {
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+const ALLOWED_UPLOAD_FORMATS = ['PNG', 'JPG', 'PDF', 'AI', 'PSD', 'FIGMA', 'MP4', 'GIF']
+
+function toWorkflowStatus(status) {
+  const map = {
+    pending_confirmation: 'pending',
+    confirmed: 'assigned',
+    in_progress: 'in_progress',
+    ready_for_qc: 'review',
+    client_review: 'review',
+    revision_requested: 'revision',
+    approved: 'completed',
+  }
+  return map[status] || status || 'pending'
+}
+
+function normalizeFormat(value = '') {
+  return String(value || '').trim().replace(/^\./, '').toUpperCase()
+}
+
+function detectFileFormat(file = {}) {
+  const fromType = String(file.type || '')
+  if (fromType.includes('png')) return 'PNG'
+  if (fromType.includes('jpeg') || fromType.includes('jpg')) return 'JPG'
+  if (fromType.includes('pdf')) return 'PDF'
+  if (fromType.includes('mp4')) return 'MP4'
+  if (fromType.includes('gif')) return 'GIF'
+
+  const fileName = String(file.fileName || file.name || file.url || '')
+  const ext = fileName.includes('.') ? fileName.split('.').pop() : ''
+  return normalizeFormat(ext)
+}
+
+function filterAllowedDeliveryFiles(files = []) {
+  return files.filter((entry) => ALLOWED_UPLOAD_FORMATS.includes(detectFileFormat(entry)))
+}
+
+function normalizeRevisionCount(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Math.round(parsed)
+}
+
+function computeRevisionRate(revisionCount) {
+  return Number((revisionCount / 3).toFixed(2))
+}
+
+function computeDelayRisk({ status, deadline, revisionCount }) {
+  const statusValue = String(status || '').toLowerCase()
+  const deadlineMs = toMillis(deadline)
+  const now = Date.now()
+  const nearThreshold = now + (48 * 60 * 60 * 1000)
+  const deadlineNear = deadlineMs > 0 && deadlineMs <= nearThreshold
+  const notStarted = ['pending_confirmation', 'confirmed'].includes(statusValue)
+  const multipleRevisions = normalizeRevisionCount(revisionCount) >= 2
+  return (deadlineNear && notStarted) || (deadlineNear && multipleRevisions) || (notStarted && multipleRevisions)
+}
+
+function resolveRevenuePerCredit(tier) {
+  const tierKey = String(tier || 'starter').toLowerCase()
+  const config = TIER_BY_KEY[tierKey] || TIER_BY_KEY.starter
+  const credits = Number(config?.creditsPerMonth || 0)
+  const price = Number(config?.priceUsd || 0)
+  if (!Number.isFinite(credits) || credits <= 0) return 0
+  return price / credits
+}
+
+async function recomputeCreativePerformanceProfile(creativeId) {
+  if (!creativeId) return
+  const snapshot = await getDocs(query(collection(db, 'projects'), where('assignedCreativeId', '==', creativeId)))
+  const projects = snapshot.docs.map((entry) => entry.data())
+  if (projects.length === 0) return
+
+  const revisionRates = projects.map((project) => {
+    if (Number.isFinite(Number(project.revisionRate))) return Number(project.revisionRate)
+    return computeRevisionRate(normalizeRevisionCount(project.revisionCount))
+  })
+  const avgRevisionRate = revisionRates.length > 0
+    ? Number((revisionRates.reduce((sum, value) => sum + value, 0) / revisionRates.length).toFixed(2))
+    : 0
+
+  const ratings = projects
+    .map((project) => Number(project?.clientRating?.rating))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  const avgClientRating = ratings.length > 0
+    ? Number((ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(2))
+    : 0
+
+  const completedProjects = projects.filter((project) => String(project?.status || '').toLowerCase() === 'approved')
+  const completionDurations = completedProjects
+    .map((project) => {
+      const started = toMillis(project?.createdAt)
+      const finished = toMillis(project?.approvedAt || project?.updatedAt)
+      if (!started || !finished || finished < started) return 0
+      return (finished - started) / (1000 * 60 * 60)
+    })
+    .filter((value) => Number.isFinite(value) && value > 0)
+  const completionSpeed = completionDurations.length > 0
+    ? Number((completionDurations.reduce((sum, value) => sum + value, 0) / completionDurations.length).toFixed(2))
+    : 0
+
+  try {
+    await updateDoc(doc(db, 'creatives', creativeId), {
+      'performance.avgRevisionRate': avgRevisionRate,
+      'performance.avgClientRating': avgClientRating,
+      'performance.completionSpeed': completionSpeed,
+      updatedAt: serverTimestamp(),
+    })
+  } catch (error) {
+    console.error('[ProjectService] Failed to persist creative performance metrics:', error)
+  }
 }
 
 class ProjectService {
@@ -295,76 +397,73 @@ class ProjectService {
 
   async createProjectWithCreditReservation({
     clientId,
-    createdBy,
+    category,
+    deliverableId,
+    credits = 0,
     title,
-    deliverableType,
-    complexity = 'standard',
     description = '',
     brief = '',
+    briefModel = null,
     referenceFiles = [],
+    inspirationFiles = [],
+    brandAssets = [],
+    brandAssetFiles = [],
     deadline = '',
+    templateId = null,
+    templateSnapshot = null,
   }) {
     if (!clientId) throw new Error('clientId is required')
     if (!title?.trim()) throw new Error('Project title is required')
-    if (!deliverableType) throw new Error('Deliverable type is required')
+    if (!category) throw new Error('Service category is required')
+    if (!deliverableId) throw new Error('Deliverable type is required')
 
-    const estimatedCredits = creditService.estimateCredits(deliverableType, complexity)
-    const creditBalance = await creditService.getCreditBalance(clientId)
-    if (Number(creditBalance.totalCredits || 0) < estimatedCredits) {
-      throw new Error('Insufficient credits to create this project.')
-    }
-
-    const projectRef = doc(collection(db, 'projects'))
-
-    const projectPayload = {
+    // Server-side enforcement: limit check + credit check + atomic project creation
+    const callable = httpsCallable(functions, 'createProjectWithReservation')
+    const response = await callable({
       clientId,
-      createdBy: createdBy || clientId,
-      title: title.trim(),
-      deliverableType,
-      complexity,
-      description: description.trim(),
-      brief: brief.trim(),
-      estimatedCredits,
-      confirmedCredits: null,
-      actualCreditsUsed: null,
-      creditsReserved: false,
-      reservedCreditsAmount: 0,
-      status: 'pending_confirmation',
-      assignedCreativeId: null,
-      assignedCreativeIds: [],
-      workspaceNotes: '',
+      category,
+      deliverableId,
+      credits,
+      title,
+      description,
+      brief,
+      briefModel,
+      deadline,
       referenceFiles: Array.isArray(referenceFiles) ? referenceFiles : [],
-      clientRating: null,
-      ratingsHistory: [],
-      deadline: parseDeadline(deadline),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }
+      inspirationFiles: Array.isArray(inspirationFiles) ? inspirationFiles : [],
+      brandAssets: Array.isArray(brandAssets) ? brandAssets : [],
+      brandAssetFiles: Array.isArray(brandAssetFiles) ? brandAssetFiles : [],
+      templateId,
+      templateSnapshot,
+    })
 
-    await setDoc(projectRef, projectPayload)
+    const { projectId, estimatedCredits } = response.data
 
-    if (Array.isArray(referenceFiles) && referenceFiles.length > 0) {
-      const finalizedReferenceFiles = await this.finalizeProjectReferenceFiles(projectRef.id, clientId, referenceFiles)
-      await updateDoc(projectRef, {
-        referenceFiles: finalizedReferenceFiles,
+    // Finalize reference file paths in storage (client-side only; no limit/credit impact)
+    const inspiration = Array.isArray(inspirationFiles) ? inspirationFiles : []
+    const brandAssetEntries = Array.isArray(brandAssets) && brandAssets.length > 0
+      ? brandAssets
+      : (Array.isArray(brandAssetFiles) ? brandAssetFiles : [])
+    const combinedReferences = Array.isArray(referenceFiles) && referenceFiles.length > 0
+      ? referenceFiles
+      : [...inspiration, ...brandAssetEntries]
+
+    if (combinedReferences.length > 0 || inspiration.length > 0 || brandAssetEntries.length > 0) {
+      const [finalizedReferences, finalizedInspiration, finalizedBrandAssets] = await Promise.all([
+        this.finalizeProjectReferenceFiles(projectId, clientId, combinedReferences),
+        this.finalizeProjectReferenceFiles(projectId, clientId, inspiration),
+        this.finalizeProjectReferenceFiles(projectId, clientId, brandAssetEntries),
+      ])
+      await updateDoc(doc(db, 'projects', projectId), {
+        referenceFiles: finalizedReferences,
+        inspirationFiles: finalizedInspiration,
+        brandAssets: finalizedBrandAssets,
+        brandAssetFiles: finalizedBrandAssets,
         updatedAt: serverTimestamp(),
       })
     }
 
-    await this.upsertProjectMember(projectRef.id, clientId, 'client_owner', { addedBy: createdBy || clientId })
-    await this.addProjectActivity(projectRef.id, 'project_created', 'Project request submitted and awaiting admin confirmation', { uid: createdBy || clientId, role: 'client' })
-
-    await createNotification({
-      recipientId: clientId,
-      projectId: projectRef.id,
-      title: 'Project request submitted',
-      message: `${title.trim()} is pending admin confirmation before creative assignment.`,
-    })
-
-    return {
-      projectId: projectRef.id,
-      estimatedCredits,
-    }
+    return { projectId, estimatedCredits }
   }
 
   async upsertProjectMember(projectId, uid, role, metadata = {}) {
@@ -624,6 +723,12 @@ class ProjectService {
 
     await updateDoc(projectRef, {
       status: 'in_progress',
+      workflowStatus: toWorkflowStatus('in_progress'),
+      delayRisk: computeDelayRisk({
+        status: 'in_progress',
+        deadline: data.deadline,
+        revisionCount: data.revisionCount,
+      }),
       updatedAt: serverTimestamp(),
     })
     await this.addProjectActivity(projectId, 'project_started', 'Project started by creative', actor)
@@ -695,6 +800,12 @@ class ProjectService {
 
     const payload = {
       status: 'ready_for_qc',
+      workflowStatus: toWorkflowStatus('ready_for_qc'),
+      delayRisk: computeDelayRisk({
+        status: 'ready_for_qc',
+        deadline: data.deadline,
+        revisionCount: data.revisionCount,
+      }),
       updatedAt: serverTimestamp(),
     }
 
@@ -738,7 +849,7 @@ class ProjectService {
     const note = String(options.note || '').trim()
     const revisionRound = Number(options.revisionRound || 1)
     const isLatest = options.isLatest !== false
-    const files = Array.isArray(options.files) ? options.files : []
+    const files = filterAllowedDeliveryFiles(Array.isArray(options.files) ? options.files : [])
     const requestedTarget = String(options.targetFolder || 'revisions').toLowerCase()
     const targetFolder = ['wip', 'revisions', 'final'].includes(requestedTarget) ? requestedTarget : 'revisions'
 
@@ -767,7 +878,39 @@ class ProjectService {
       createdAt: serverTimestamp(),
     })
 
-    await updateDoc(doc(db, 'projects', projectId), {
+    const projectRef = doc(db, 'projects', projectId)
+    const projectSnap = await getDoc(projectRef)
+    const projectData = projectSnap.exists() ? projectSnap.data() : {}
+    const existingPreview = Array.isArray(projectData.previewFiles) ? projectData.previewFiles : []
+    const existingFinal = Array.isArray(projectData.finalFiles) ? projectData.finalFiles : []
+    const existingSource = Array.isArray(projectData.sourceFiles) ? projectData.sourceFiles : []
+
+    const dedupeByUrl = (items = []) => {
+      const map = new Map()
+      items.forEach((entry) => {
+        if (!entry?.url) return
+        map.set(entry.url, entry)
+      })
+      return [...map.values()]
+    }
+
+    const nextPreview = dedupeByUrl([
+      ...existingPreview,
+      ...(targetFolder === 'wip' || targetFolder === 'revisions' ? files : []),
+    ])
+    const nextFinal = dedupeByUrl([
+      ...existingFinal,
+      ...(targetFolder === 'final' ? files : []),
+    ])
+    const nextSource = dedupeByUrl([
+      ...existingSource,
+      ...files.filter((entry) => ['AI', 'PSD', 'FIGMA'].includes(detectFileFormat(entry))),
+    ])
+
+    await updateDoc(projectRef, {
+      previewFiles: nextPreview,
+      finalFiles: nextFinal,
+      sourceFiles: nextSource,
       updatedAt: serverTimestamp(),
     })
 
@@ -825,6 +968,12 @@ class ProjectService {
 
     await updateDoc(projectRef, {
       status: 'client_review',
+      workflowStatus: toWorkflowStatus('client_review'),
+      delayRisk: computeDelayRisk({
+        status: 'client_review',
+        deadline: data.deadline,
+        revisionCount: data.revisionCount,
+      }),
       updatedAt: serverTimestamp(),
     })
     await this.addProjectActivity(projectId, 'client_review', 'Project approved for client review', actor)
@@ -847,9 +996,22 @@ class ProjectService {
     if (!snap.exists()) throw new Error('Project not found')
     const data = snap.data()
 
+    const nextRevisionCount = normalizeRevisionCount(data.revisionCount) + 1
+    const nextRevisionRate = computeRevisionRate(nextRevisionCount)
+    const nextDelayRisk = computeDelayRisk({
+      status: 'revision_requested',
+      deadline: data.deadline,
+      revisionCount: nextRevisionCount,
+    })
+
     await updateDoc(projectRef, {
       status: 'revision_requested',
+      workflowStatus: toWorkflowStatus('revision_requested'),
       revisionRequestedBy: requestedBy,
+      revisionCount: nextRevisionCount,
+      revisionRate: nextRevisionRate,
+      revisionFlag: nextRevisionCount > 3,
+      delayRisk: nextDelayRisk,
       updatedAt: serverTimestamp(),
     })
     await this.addProjectActivity(projectId, 'revision_requested', `Revision requested by ${requestedBy}`, actor)
@@ -864,6 +1026,10 @@ class ProjectService {
       title: 'Revision requested',
       message: `${data.title} needs revisions.`,
     })
+
+    if (data.assignedCreativeId) {
+      await recomputeCreativePerformanceProfile(data.assignedCreativeId)
+    }
   }
 
   async approveProject(projectId, approvedBy = 'client', actor = { role: approvedBy }) {
@@ -872,27 +1038,22 @@ class ProjectService {
     if (!snap.exists()) throw new Error('Project not found')
     const data = snap.data()
 
-    let hasReservedCredits = Boolean(data.creditsReserved)
-    if (!hasReservedCredits) {
-      const priorTxSnap = await getDocs(query(collection(db, 'creditTransactions'), where('projectId', '==', projectId), limit(20)))
-      hasReservedCredits = priorTxSnap.docs.some((entry) => entry.data()?.type === 'deduction')
-    }
+    if (!data.creditsReserved) {
+      // Legacy path: projects created before Model A had no credit reservation at submission.
+      // Check if credits were deducted via a prior manual reservation; if not, reserve now.
+      const priorTxSnap = await getDocs(
+        query(collection(db, 'creditTransactions'), where('projectId', '==', projectId), limit(20)),
+      )
+      const alreadyDeducted = priorTxSnap.docs.some((entry) => entry.data()?.type === 'deduction')
 
-    if (!hasReservedCredits) {
-      const creditsToReserve = Number(data.actualCreditsUsed || data.confirmedCredits || data.estimatedCredits || 0)
-      if (!Number.isFinite(creditsToReserve) || creditsToReserve <= 0) {
-        throw new Error('Unable to reserve credits for project approval.')
+      if (!alreadyDeducted) {
+        const creditsToReserve = Number(data.actualCreditsUsed || data.confirmedCredits || data.estimatedCredits || 0)
+        if (!Number.isFinite(creditsToReserve) || creditsToReserve <= 0) {
+          throw new Error('Unable to reserve credits for project approval.')
+        }
+        await creditService.reserveCredits(data.clientId, projectId, creditsToReserve)
       }
 
-      await creditService.reserveCredits(data.clientId, projectId, creditsToReserve)
-      await updateDoc(projectRef, {
-        creditsReserved: true,
-        reservedCreditsAmount: creditsToReserve,
-        reservedCreditsAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-    } else if (!data.creditsReserved) {
-      // Backfill marker for legacy projects that already had credits deducted earlier.
       await updateDoc(projectRef, {
         creditsReserved: true,
         reservedCreditsAmount: Number(data.reservedCreditsAmount || data.confirmedCredits || data.estimatedCredits || 0),
@@ -900,13 +1061,65 @@ class ProjectService {
       })
     }
 
+    const creditsConsumed = Number(data.actualCreditsUsed || data.confirmedCredits || data.estimatedCredits || 0)
+    let clientTier = String(data.clientSubscriptionTier || data.tier || '').toLowerCase()
+    if (!clientTier && data.clientId) {
+      const clientSnap = await getDoc(doc(db, 'clients', data.clientId))
+      clientTier = String(clientSnap.exists() ? clientSnap.data()?.subscription?.tier : 'starter').toLowerCase()
+    }
+    if (!clientTier) clientTier = 'starter'
+    const clientRevenue = Number((creditsConsumed * resolveRevenuePerCredit(clientTier)).toFixed(2))
+
+    const revisionCount = normalizeRevisionCount(data.revisionCount)
+    const revisionRate = Number.isFinite(Number(data.revisionRate))
+      ? Number(data.revisionRate)
+      : computeRevisionRate(revisionCount)
+
     await updateDoc(projectRef, {
       status: 'approved',
+      workflowStatus: toWorkflowStatus('approved'),
       approvedBy,
       approvedAt: serverTimestamp(),
+      creditsConsumed,
+      revisionCount,
+      revisionRate,
+      revisionFlag: revisionCount > 3,
+      delayRisk: false,
+      clientSubscriptionTier: clientTier,
+      clientRevenue,
+      payoutStatus: data.assignedCreativeId ? 'pending' : 'not_calculated',
       updatedAt: serverTimestamp(),
     })
     await this.addProjectActivity(projectId, 'project_approved', `Project approved by ${approvedBy}`, actor)
+
+    if (data.assignedCreativeId) {
+      const earning = await creativeEarningsService.upsertProjectEarning({
+        creativeId: data.assignedCreativeId,
+        projectId,
+        clientId: data.clientId || null,
+        deliverableType: data.deliverableTitle || data.deliverableType || null,
+        tier: data.clientSubscriptionTier || data.tier || null,
+        projectTitle: data.title || '',
+        creditsDelivered: creditsConsumed,
+        status: 'earned',
+      })
+
+      await updateDoc(projectRef, {
+        creativeEarning: earning.totalPayout,
+        creativeCost: earning.totalPayout,
+        projectMargin: Number((clientRevenue - Number(earning.totalPayout || 0)).toFixed(2)),
+        payoutStatus: 'pending',
+        updatedAt: serverTimestamp(),
+      })
+
+      await recomputeCreativePerformanceProfile(data.assignedCreativeId)
+    } else {
+      await updateDoc(projectRef, {
+        creativeCost: 0,
+        projectMargin: clientRevenue,
+        updatedAt: serverTimestamp(),
+      })
+    }
 
     if (actor?.uid) {
       await this.upsertProjectMember(projectId, actor.uid, actor.role || approvedBy, { addedBy: actor.uid })
@@ -957,6 +1170,10 @@ class ProjectService {
       title: 'New client rating received',
       message: `${data.title} received a ${score}/5 rating.`,
     })
+
+    if (data.assignedCreativeId) {
+      await recomputeCreativePerformanceProfile(data.assignedCreativeId)
+    }
   }
 }
 

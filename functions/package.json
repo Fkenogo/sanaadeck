@@ -8,7 +8,11 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "migrate:workspace-data": "node scripts/migrateWorkspaceData.js"
+    "migrate:workspace-data": "node scripts/migrateWorkspaceData.js",
+    "seed:templates": "node scripts/seedTemplates.js",
+    "seed:briefing-minimum": "node scripts/seedMinimumBriefingTemplates.js",
+    "seed:system-config": "node scripts/seedSystemConfig.js",
+    "seed:design-catalog": "node scripts/seedDesignCatalog.js"
   },
   "engines": {
     "node": "20"

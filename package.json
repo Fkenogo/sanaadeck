@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "migrate:workspace-data": "npm --prefix functions run migrate:workspace-data",
+    "seed:design-catalog": "npm --prefix functions run seed:design-catalog",
     "verify:payment-scenarios": "node scripts/verify-payment-scenarios.mjs"
   },
   "dependencies": {

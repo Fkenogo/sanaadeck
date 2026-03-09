@@ -153,6 +153,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    match /creativeEarnings/{recordId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.creativeId == request.auth.uid);
+      allow create, update: if isAdmin() || signedIn();
+      allow delete: if isSuperAdmin();
+    }
+
     match /performanceReviews/{reviewId} {
       allow read: if isAdmin() || (signedIn() && resource.data.creativeId == request.auth.uid);
       allow create, update, delete: if isAdmin();
@@ -176,6 +182,25 @@ service cloud.firestore {
 
     match /templateAssetLibrary/{assetId} {
       allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /briefingTemplates/{templateId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /serviceCategories/{categoryId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /designDeliverables/{deliverableId} {
+      // Contains internalWorkloadScore; use Cloud Functions for client-safe access.
+      allow read: if isAdmin();
       allow create, update: if isAdmin();
       allow delete: if isSuperAdmin();
     }

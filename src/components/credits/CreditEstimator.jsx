@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import creditService from '@/services/creditService'
 import { COMPLEXITY_OPTIONS, DELIVERABLE_OPTIONS } from '@/utils/constants'
-import { creditsToHours } from '@/utils/helpers'
 
 function CreditEstimator({ deliverableType, complexity, onDeliverableTypeChange, onComplexityChange }) {
   const estimatedCredits = useMemo(
@@ -54,9 +53,6 @@ function CreditEstimator({ deliverableType, complexity, onDeliverableTypeChange,
       <div className="mt-4 rounded bg-muted p-3">
         <p className="text-sm">
           Estimated credits: <span className="font-semibold">{estimatedCredits}</span>
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Estimated production time: {creditsToHours(estimatedCredits)} hours
         </p>
       </div>
     </div>

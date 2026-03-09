@@ -1,21 +1,20 @@
-import { format } from 'date-fns'
+import { formatDate } from '@/utils/timestamp'
 
 const statusClassMap = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  assigned: 'bg-blue-100 text-blue-800',
   pending_confirmation: 'bg-yellow-100 text-yellow-800',
   confirmed: 'bg-blue-100 text-blue-800',
   in_progress: 'bg-purple-100 text-purple-800',
+  review: 'bg-orange-100 text-orange-800',
+  revision: 'bg-red-100 text-red-800',
+  completed: 'bg-green-100 text-green-800',
   ready_for_qc: 'bg-orange-100 text-orange-800',
   client_review: 'bg-indigo-100 text-indigo-800',
   approved: 'bg-green-100 text-green-800',
   revision_requested: 'bg-red-100 text-red-800',
 }
 
-function formatDate(timestamp) {
-  if (!timestamp) return 'Unknown'
-  const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return format(date, 'PP')
-}
 
 function getCreativeAvatar(project) {
   const source = project.assignedCreativeName || project.assignedCreativeEmail || ''
@@ -24,22 +23,28 @@ function getCreativeAvatar(project) {
 }
 
 function ProjectCard({ project, actions = [] }) {
-  const status = project.status || 'pending_confirmation'
+  const status = project.workflowStatus || project.status || 'pending'
   const statusClass = statusClassMap[status] || 'bg-muted text-foreground'
+  const briefOverview = project?.brief?.projectOverview || project?.instructions || project?.description || '-'
+  const attachmentCount = (Array.isArray(project.inspirationFiles) ? project.inspirationFiles.length : 0) +
+    (Array.isArray(project.brandAssets) ? project.brandAssets.length : (Array.isArray(project.brandAssetFiles) ? project.brandAssetFiles.length : 0))
 
   return (
     <article className="rounded border border-border p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold">{project.title}</h3>
-          <p className="text-sm text-muted-foreground">{project.deliverableType}</p>
+          <p className="text-sm text-muted-foreground">{project.deliverableTitle || project.deliverableType}</p>
+          <p className="text-xs text-muted-foreground">{project.categoryTitle || project.category || 'General'}</p>
         </div>
         <span className={`rounded px-2 py-1 text-xs font-medium ${statusClass}`}>{status.replaceAll('_', ' ')}</span>
       </div>
 
       <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
-        <p>Credits: {project.actualCreditsUsed ?? project.confirmedCredits ?? project.estimatedCredits ?? 0}</p>
-        <p>Timeline: {formatDate(project.createdAt)} → {formatDate(project.deadline)}</p>
+        <p>Credits: {project.credits ?? project.actualCreditsUsed ?? project.confirmedCredits ?? project.estimatedCredits ?? 0}</p>
+        <p>Deadline: {formatDate(project.deadline)}</p>
+        <p>Attachments: {attachmentCount}</p>
+        <p className="line-clamp-2">Instructions: {briefOverview}</p>
         <div className="flex items-center gap-2">
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
             {getCreativeAvatar(project)}
